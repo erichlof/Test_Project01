@@ -37,7 +37,10 @@ gl = canvas.getContext('webgl');
 vertices = [
 	-0.5,  0.5, 
 	-0.5, -0.5, 
-	 0.0, -0.5 
+	-0.5, -0.5,
+	 0.0, -0.5,
+	0.0, -0.5,
+	-0.5, 0.5
 ];
 
 // Create a new buffer object
@@ -83,7 +86,7 @@ if (!vertStatus || vertErrors != '')
 fragCode = 
 'void main(void)' + '\n' +
 '{' + '\n' +
-'	gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0,);' + '\n' +
+'	gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);' + '\n' +
 '}';
 
 // Create fragment shader object
@@ -147,4 +150,4 @@ gl.clear(gl.COLOR_BUFFER_BIT);
 gl.viewport(0, 0, canvas.width, canvas.height);
 
 // Draw the triangle
-gl.drawArrays(gl.TRIANGLES, 0, 3);
+gl.drawArrays(gl.LINES, 0, 6);
