@@ -59,13 +59,14 @@ gl.bindBuffer(gl.ARRAY_BUFFER, null);
 /* Step3: Create and compile Shader programs */
 
 // Vertex shader source code
-vertCode =
-'attribute vec2 coordinates;' + '\n' +
-'\n' +
-'void main(void)' + '\n' +
-'{' + '\n' +
-'	gl_Position = vec4(coordinates, 0.0, 1.0);' + '\n' +
-'}';
+vertCode = 
+`attribute vec2 coordinates;
+
+void main(void)
+{
+	gl_Position = vec4(coordinates, 0.0, 1.0);
+}`
+;
 
 //Create a vertex shader object
 vertShader = gl.createShader(gl.VERTEX_SHADER);
@@ -83,11 +84,13 @@ if (!vertStatus || vertErrors != '')
 
 
 //Fragment shader source code
-fragCode = 
-'void main(void)' + '\n' +
-'{' + '\n' +
-'	gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);' + '\n' +
-'}';
+fragCode =
+`void main(void)
+{
+	gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}`
+;
+
 
 // Create fragment shader object
 fragShader = gl.createShader(gl.FRAGMENT_SHADER);
