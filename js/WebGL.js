@@ -149,8 +149,8 @@ void main(void)
 
 	float angle = uTime * (PI / 180.0) * 30.0;
 	angle = mod(angle, 2.0 * PI);
-	vec3 cameraPosition = spherePosition + vec3(cos(angle) * 10.0, 30, sin(angle) * 10.0);
-	cameraPosition = vec3(0,6,15);
+	vec3 cameraPosition = spherePosition + vec3(cos(angle) * 10.0, 10, sin(angle) * 10.0);
+	//cameraPosition = vec3(0,6,15);
 	
 	vec3 camRight, camUp, camForward;
 	vec3 lookTarget = spherePosition;
