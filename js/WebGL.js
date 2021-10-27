@@ -123,13 +123,38 @@ float SphereIntersect( float rad, vec3 pos, Ray ray )
 	return t0 > 0.0 ? t0 : t1 > 0.0 ? t1 : INFINITY;
 }
 
+
+float PosY_XZRectangleIntersect( vec3 pos, float radiusU, float radiusV, Ray r )
+{
+	vec3 normal = vec3(0,1,0);
+	float dt = dot(-normal, r.direction);
+	// use the following for one-sided rectangle
+	//if (dt < 0.0) return INFINITY;
+	float t = dot(-normal, pos - r.origin) / dt;
+	if (t < 0.0) return INFINITY;
+
+	vec3 hit = r.origin + r.direction * t;
+	vec3 rectPosToHit = hit - pos;
+	vec3 U = vec3(1,0,0);
+	vec3 V = vec3(0,0,-1);
+	return (abs(dot(rectPosToHit, U)) > radiusU || abs(dot(rectPosToHit, V)) > radiusV) ? INFINITY : t;
+}
+
 void main(void)
 {
-	vec3 worldUp = vec3(0,1,0);
-	vec3 cameraPosition = vec3(0,0,5);
-	vec3 spherePosition = vec3(0,0,-10);
+	vec3 worldUp = vec3(0, 1, 0);
+
+	float sphereRadius = 3.0;
+	vec3 spherePosition = vec3(0,sphereRadius,0);
+
+	float angle = uTime * (PI / 180.0) * 30.0;
+	angle = mod(angle, 2.0 * PI);
+	vec3 cameraPosition = spherePosition + vec3(cos(angle) * 10.0, 30, sin(angle) * 10.0);
+	cameraPosition = vec3(0,6,15);
+	
 	vec3 camRight, camUp, camForward;
-	vec3 lookDirection = normalize( (spherePosition + vec3(sin(uTime),0,0)) - cameraPosition );
+	vec3 lookTarget = spherePosition;
+	vec3 lookDirection = normalize( lookTarget - cameraPosition );
 	// camera looks down -Z axis, but the 'camForward' basis vector must point the opposite way, so that it points to +Z axis
 	// in the end, we need all camera basis vectors pointing to +X, +Y, and +Z axes: 
 	// camRight points along the +X axis, camUp points along the +Y axis, 'camForward' points along the +Z axis
@@ -153,17 +178,20 @@ void main(void)
 	Ray ray = Ray(cameraPosition, rayDir);
 
 	float t = INFINITY;
+	float d;
 
-	t = SphereIntersect( 3.0, spherePosition, ray );
-	if (t == INFINITY)
+	d = PosY_XZRectangleIntersect( vec3(0,0,0), 10.0, 10.0, ray );
+	if (d < t)
 	{
-		pixelColor = vec3(0);
+		t = d;
+		pixelColor = vec3(1,0,0);
 	}
-	else
+	d = SphereIntersect( sphereRadius, spherePosition, ray );
+	if (d < t)
 	{
-		pixelColor = vec3(1);
+		t = d;
+		pixelColor = vec3(1,1,1);
 	}
-
 
 	gl_FragColor = vec4(pixelColor, 1.0);
 }
