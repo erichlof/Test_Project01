@@ -261,10 +261,10 @@ function drawScreenQuad()
 	// Clear the color buffer bit
 	gl.clear(gl.COLOR_BUFFER_BIT);
 
-	// Set the view port
+	// Set the viewport
 	gl.viewport(0, 0, canvas.width, canvas.height);
 
-	// Draw the triangle
+	// Draw the 2 side-by-side triangles (making up a large quad that stretches across the entire viewport)
 	//gl.drawArrays(gl.LINES, 0, 6);
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
