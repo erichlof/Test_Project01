@@ -13,6 +13,10 @@ let fragStatus;
 let fragErrors;
 let shaderProgram;
 let coord;
+let counter = 0;
+let uTime = 0;
+let uniformLocation_uTime;
+let oldTime, newTime, frameTime;
 
 function addLineNumbers(string)
 {
@@ -35,12 +39,13 @@ gl = canvas.getContext('webgl');
 /* Step2: Define the geometry and store it in buffer objects */
 
 vertices = [
-	-0.5,  0.5, 
-	-0.5, -0.5, 
-	-0.5, -0.5,
-	 0.0, -0.5,
-	0.0, -0.5,
-	-0.5, 0.5
+	-1.0, -1.0, // left triangle
+	1.0, -1.0,
+	-1.0, 1.0,
+
+	-1.0, 1.0, // right triangle
+	1.0, -1.0,
+	1.0, 1.0
 ];
 
 // Create a new buffer object
@@ -59,14 +64,15 @@ gl.bindBuffer(gl.ARRAY_BUFFER, null);
 /* Step3: Create and compile Shader programs */
 
 // Vertex shader source code
-vertCode = 
-`attribute vec2 coordinates;
+vertCode = `
+precision highp float;
+attribute vec2 coordinates;
 
 void main(void)
 {
 	gl_Position = vec4(coordinates, 0.0, 1.0);
-}`
-;
+}
+`;
 
 //Create a vertex shader object
 vertShader = gl.createShader(gl.VERTEX_SHADER);
@@ -84,12 +90,84 @@ if (!vertStatus || vertErrors != '')
 
 
 //Fragment shader source code
-fragCode =
-`void main(void)
+fragCode = `
+precision highp float;
+
+#define PI 3.14159265358979323
+#define INFINITY 1000000.0
+
+uniform float uTime;
+
+struct Ray { vec3 origin; vec3 direction; };
+
+void solveQuadratic(float A, float B, float C, out float t0, out float t1) // required for scenes with quadric shapes (spheres, cylinders, etc.)
 {
-	gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-}`
-;
+	float invA = 1.0 / A;
+	B *= invA;
+	C *= invA;
+	float neg_halfB = -B * 0.5;
+	float u2 = neg_halfB * neg_halfB - C;
+	float u = u2 < 0.0 ? neg_halfB = 0.0 : sqrt(u2);
+	t0 = neg_halfB - u;
+	t1 = neg_halfB + u;
+}
+
+float SphereIntersect( float rad, vec3 pos, Ray ray )
+{
+	float t0, t1;
+	vec3 L = ray.origin - pos;
+	float a = dot( ray.direction, ray.direction );
+	float b = 2.0 * dot( ray.direction, L );
+	float c = dot( L, L ) - (rad * rad);
+	solveQuadratic(a, b, c, t0, t1);
+	return t0 > 0.0 ? t0 : t1 > 0.0 ? t1 : INFINITY;
+}
+
+void main(void)
+{
+	vec3 worldUp = vec3(0,1,0);
+	vec3 cameraPosition = vec3(0,0,5);
+	vec3 spherePosition = vec3(0,0,-10);
+	vec3 camRight, camUp, camForward;
+	vec3 lookDirection = normalize( (spherePosition + vec3(sin(uTime),0,0)) - cameraPosition );
+	// camera looks down -Z axis, but the 'camForward' basis vector must point the opposite way, so that it points to +Z axis
+	// in the end, we need all camera basis vectors pointing to +X, +Y, and +Z axes: 
+	// camRight points along the +X axis, camUp points along the +Y axis, 'camForward' points along the +Z axis
+	camForward = -lookDirection; // by flipping this around, we get back to the true 'camForward' basis vector, (even though the camera 'looks' in the opposite Z direction)
+	
+	camRight = cross(worldUp, camForward);
+	camRight = normalize(camRight);
+	camUp = cross(camForward, camRight);
+	camUp = normalize(camUp);
+
+	vec2 resolution = vec2(640, 480);
+	float aspectRatio = resolution.x / resolution.y;
+	float fov = 60.0;
+	float vLen = tan(fov * 0.5 * (PI / 180.0));
+	float uLen = vLen * aspectRatio;
+	vec2 uv = gl_FragCoord.xy / resolution;
+	vec2 pixelPos = uv * 2.0 - 1.0;
+	vec3 rayDir = normalize( pixelPos.x * camRight * uLen + pixelPos.y * camUp * vLen + lookDirection );
+
+	vec3 pixelColor = vec3(0);
+	Ray ray = Ray(cameraPosition, rayDir);
+
+	float t = INFINITY;
+
+	t = SphereIntersect( 3.0, spherePosition, ray );
+	if (t == INFINITY)
+	{
+		pixelColor = vec3(0);
+	}
+	else
+	{
+		pixelColor = vec3(1);
+	}
+
+
+	gl_FragColor = vec4(pixelColor, 1.0);
+}
+`;
 
 
 // Create fragment shader object
@@ -137,20 +215,58 @@ gl.vertexAttribPointer(coord, 2, gl.FLOAT, false, 0, 0);
 //Enable the attribute
 gl.enableVertexAttribArray(coord);
 
+// set up uniform locations
+uniformLocation_uTime = gl.getUniformLocation(shaderProgram, 'uTime');
 
-/* Step5: Drawing the required object (triangle) */
 
-// Clear the canvas
-gl.clearColor(0.5, 0.5, 0.5, 0.9);
 
-// Enable the depth test
-gl.enable(gl.DEPTH_TEST);
+/* Step5: Drawing the required objects (2 triangles) */
 
-// Clear the color buffer bit
-gl.clear(gl.COLOR_BUFFER_BIT);
+function drawScreenQuad()
+{
+	// Clear the canvas
+	gl.clearColor(0.5, 0.5, 0.5, 1.0);
 
-// Set the view port
-gl.viewport(0, 0, canvas.width, canvas.height);
+	// Enable the depth test
+	//gl.enable(gl.DEPTH_TEST);
 
-// Draw the triangle
-gl.drawArrays(gl.LINES, 0, 6);
+	// Clear the color buffer bit
+	gl.clear(gl.COLOR_BUFFER_BIT);
+
+	// Set the view port
+	gl.viewport(0, 0, canvas.width, canvas.height);
+
+	// Draw the triangle
+	//gl.drawArrays(gl.LINES, 0, 6);
+	gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+
+
+function getTime()
+{
+	newTime = performance.now();
+	frameTime = newTime - oldTime;
+	frameTime *= 0.001;
+	uTime += frameTime;
+
+	oldTime = newTime;
+}
+
+function animate() 
+{
+	getTime();
+
+	// refresh uniforms
+	gl.uniform1f(uniformLocation_uTime, uTime);
+
+	drawScreenQuad();
+	//infoElement.innerHTML = "Samples: " + sampleCount;
+
+	requestAnimationFrame(animate);
+}
+
+oldTime = performance.now();
+
+// start up the progressive rendering!
+animate();

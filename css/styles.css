@@ -1,7 +1,4 @@
 #mycanvas {
-        width: 300px;
-        height: 300px;
-        border: 1px;
-        border-style: solid;
-        border-color: red; 
+	width: 640px;
+	height: 480px; 
 }       
