@@ -98,7 +98,8 @@ precision highp float;
 
 uniform float uTime;
 
-struct Ray { vec3 origin; vec3 direction; };
+vec3 rayOrigin; 
+vec3 rayDirection;
 
 void solveQuadratic(float A, float B, float C, out float t0, out float t1) // required for scenes with quadric shapes (spheres, cylinders, etc.)
 {
@@ -112,28 +113,28 @@ void solveQuadratic(float A, float B, float C, out float t0, out float t1) // re
 	t1 = neg_halfB + u;
 }
 
-float SphereIntersect( float rad, vec3 pos, Ray ray )
+float SphereIntersect( float rad, vec3 pos, vec3 rayOrigin, vec3 rayDirection )
 {
 	float t0, t1;
-	vec3 L = ray.origin - pos;
-	float a = dot( ray.direction, ray.direction );
-	float b = 2.0 * dot( ray.direction, L );
+	vec3 L = rayOrigin - pos;
+	float a = dot( rayDirection, rayDirection );
+	float b = 2.0 * dot( rayDirection, L );
 	float c = dot( L, L ) - (rad * rad);
 	solveQuadratic(a, b, c, t0, t1);
 	return t0 > 0.0 ? t0 : t1 > 0.0 ? t1 : INFINITY;
 }
 
 
-float PosY_XZRectangleIntersect( vec3 pos, float radiusU, float radiusV, Ray r )
+float PosY_XZRectangleIntersect( vec3 pos, float radiusU, float radiusV, vec3 rayOrigin, vec3 rayDirection )
 {
 	vec3 normal = vec3(0,1,0);
-	float dt = dot(-normal, r.direction);
+	float dt = dot(-normal, rayDirection);
 	// use the following for one-sided rectangle
 	//if (dt < 0.0) return INFINITY;
-	float t = dot(-normal, pos - r.origin) / dt;
+	float t = dot(-normal, pos - rayOrigin) / dt;
 	if (t < 0.0) return INFINITY;
 
-	vec3 hit = r.origin + r.direction * t;
+	vec3 hit = rayOrigin + rayDirection * t;
 	vec3 rectPosToHit = hit - pos;
 	vec3 U = vec3(1,0,0);
 	vec3 V = vec3(0,0,-1);
@@ -174,19 +175,21 @@ void main(void)
 	vec2 pixelPos = uv * 2.0 - 1.0;
 	vec3 rayDir = normalize( pixelPos.x * camRight * uLen + pixelPos.y * camUp * vLen + lookDirection );
 
+	rayOrigin = cameraPosition;
+	rayDirection = rayDir;
+
 	vec3 pixelColor = vec3(0);
-	Ray ray = Ray(cameraPosition, rayDir);
 
 	float t = INFINITY;
 	float d;
 
-	d = PosY_XZRectangleIntersect( vec3(0,0,0), 10.0, 10.0, ray );
+	d = PosY_XZRectangleIntersect( vec3(0,0,0), 10.0, 10.0, rayOrigin, rayDirection );
 	if (d < t)
 	{
 		t = d;
 		pixelColor = vec3(1,0,0);
 	}
-	d = SphereIntersect( sphereRadius, spherePosition, ray );
+	d = SphereIntersect( sphereRadius, spherePosition, rayOrigin, rayDirection );
 	if (d < t)
 	{
 		t = d;
