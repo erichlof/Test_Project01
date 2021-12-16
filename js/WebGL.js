@@ -187,7 +187,7 @@ void main(void)
 	if (d < t)
 	{
 		t = d;
-		pixelColor = vec3(1,0,0);
+		pixelColor = vec3(0,1,0);
 	}
 	d = SphereIntersect( sphereRadius, spherePosition, rayOrigin, rayDirection );
 	if (d < t)
