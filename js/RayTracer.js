@@ -34,6 +34,7 @@ let uniformLocation_uFrameCounter;
 let sampleCounter = 0;
 let uOneOverSampleCounter = 1;
 let uniformLocation_uOneOverSampleCounter;
+let windowIsBeingResized = true;
 let sceneIsDynamic = true;//false;
 let mouseControl = true;
 let isPaused = true;
@@ -44,7 +45,6 @@ let aspectRatio;
 let FOV;
 let uULen, uVLen;
 let uniformLocation_uULen, uniformLocation_uVLen;
-let appJustStarted = true;
 let displayWidth, displayHeight;
 let needResize;
 let image;
@@ -244,6 +244,9 @@ function onMouseWheel(event)
 }
 
 
+window.addEventListener('resize', onWindowResize, false);
+
+
 if ('ontouchstart' in window)
 {
 	mouseControl = false;
@@ -384,18 +387,41 @@ image.addEventListener('load', function ()
 
 // create a target texture to render the raytraced image to
 const uRayTracedImageTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 256, 256, 0, gl.RGBA, gl.FLOAT, null);
+// set the filtering so we don't need mips
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+// Create and bind the framebuffer
+const rayTracedImage_FrameBuffer = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, rayTracedImage_FrameBuffer);
+// attach the texture as the first color attachment
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uRayTracedImageTexture, 0);
 
 
 // create a target texture to render the copied screen image to
 const uPreviousScreenImageTexture = gl.createTexture();
-
-
-// Create and bind the framebuffer
-const rayTracedImage_FrameBuffer = gl.createFramebuffer();
-
+gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 256, 256, 0, gl.RGBA, gl.FLOAT, null);
+// set the filtering so we don't need mips
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 // Create and bind the framebuffer
 const previousScreenImage_FrameBuffer = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, previousScreenImage_FrameBuffer);
+// attach the texture as the first color attachment
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uPreviousScreenImageTexture, 0);
+
+
+
+
+
 
 
 
@@ -1228,72 +1254,10 @@ function drawScreenQuad()
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
-
-function resizeCanvasToDisplaySize(canvas) 
+function onWindowResize(event)
 {
-	// Lookup the size the browser is displaying the canvas in CSS pixels.
-	displayWidth = canvas.clientWidth;
-	displayHeight = canvas.clientHeight;
-
-	/* if (devicePixelRatio > 1)
-	{
-		displayWidth *= 0.5;
-		displayHeight *= 0.5;
-	} */
-
-	// Check if the canvas is not the same size.
-	needResize = canvas.width !== displayWidth || canvas.height !== displayHeight;
-
-	if (needResize || appJustStarted) 
-	{
-		uCameraIsMoving = true;
-
-		aspectRatio = canvas.clientWidth / canvas.clientHeight;
-		uVLen = Math.tan(degToRad(FOV * 0.5));
-		uULen = uVLen * aspectRatio;
-		gl.uniform1f(uniformLocation_uULen, uULen);
-		gl.uniform1f(uniformLocation_uVLen, uVLen);
-
-		// Make the canvas the same size
-		canvas.width = displayWidth;
-		canvas.height = displayHeight;
-
-		resolutionX = canvas.width;
-		resolutionY = canvas.height;
-		gl.uniform2f(uniformLocation_uResolution, resolutionX, resolutionY);
-
-		// resize render target textures as well
-		gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.FLOAT, null);
-		// set the filtering so we don't need mips
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-		gl.bindFramebuffer(gl.FRAMEBUFFER, rayTracedImage_FrameBuffer);
-		// attach the texture as the first color attachment
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uRayTracedImageTexture, 0);
-
-
-		gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.FLOAT, null);
-		// set the filtering so we don't need mips
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		
-		gl.bindFramebuffer(gl.FRAMEBUFFER, previousScreenImage_FrameBuffer);
-		// attach the texture as the first color attachment
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uPreviousScreenImageTexture, 0);
-
-		//gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-
-		appJustStarted = false;
-	}
+	windowIsBeingResized = true;
 }
-
 
 function getTime()
 {
@@ -1307,17 +1271,52 @@ function getTime()
 
 function animate() 
 {
+	getTime();
 
-	// reset variables
+	// reset this every animation frame
 	uCameraIsMoving = false;
 
-	// the following gl.useProgram needs to be here in order to set the correct uniforms inside resizeCanvasToDisplaySize()
+	// the following gl.useProgram needs to be here in order to set the correct uniforms if windowIsBeingResized == true
 	// STEP 1: Perform RayTracing then render to the target: uRayTracedImageTexture
 	gl.useProgram(rayTracingShaderProgram);
 
-	resizeCanvasToDisplaySize(gl.canvas);
+	
+	if (windowIsBeingResized)
+	{
+		uCameraIsMoving = true;
 
-	getTime();
+		displayWidth = gl.canvas.clientWidth;
+		displayHeight = gl.canvas.clientHeight;
+
+		if (devicePixelRatio > 1)
+		{
+			displayWidth *= 0.5;
+			displayHeight *= 0.5;
+		}
+
+		// Make the canvas the same size
+		gl.canvas.width = displayWidth;
+		gl.canvas.height = displayHeight;
+
+		aspectRatio = displayWidth / displayHeight;
+		uVLen = Math.tan(degToRad(FOV * 0.5));
+		uULen = uVLen * aspectRatio;
+		gl.uniform1f(uniformLocation_uULen, uULen);
+		gl.uniform1f(uniformLocation_uVLen, uVLen);
+
+		gl.uniform2f(uniformLocation_uResolution, displayWidth, displayHeight);
+
+		// resize render target textures as well
+		gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, displayWidth, displayHeight, 0, gl.RGBA, gl.FLOAT, null);
+
+		gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, displayWidth, displayHeight, 0, gl.RGBA, gl.FLOAT, null);
+
+		windowIsBeingResized = false;
+	}
+
+	
 
 	// check user controls
 	if (mouseControl)
