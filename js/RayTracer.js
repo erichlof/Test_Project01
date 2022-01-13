@@ -3,19 +3,29 @@ let ctx;
 let gl;
 let vertices;
 let vertex_buffer;
-let vertCode;
-let vertShader;
+let commonVertCode;
+let commonVertShader;
 let vertStatus;
 let vertErrors;
-let fragCode;
-let fragShader;
+let rayTracingFragCode;
+let rayTracingFragShader;
+let rayTracingShaderProgram;
+let screenCopyFragCode;
+let screenCopyFragShader;
+let screenCopyShaderProgram;
+let screenOutputFragCode;
+let screenOutputFragShader;
+let screenOutputShaderProgram;
 let fragStatus;
 let fragErrors;
-let shaderProgram;
 let coord;
 let counter = 0;
 let resolutionX, resolutionY;
 let uTime = 0;
+let uniformLocation_uRayTracedImageTexture;
+let uniformLocation_uPreviousScreenImageTexture;
+let uniformLocation_uAccumulationBufferTexture;
+let uniformLocation_uDiffuseTexture;
 let uniformLocation_uResolution;
 let uniformLocation_uTime;
 let oldTime, newTime, frameTime;
@@ -34,13 +44,15 @@ let appJustStarted = true;
 let displayWidth, displayHeight;
 let needResize;
 let image;
-let uTexture;
+let uDiffuseTexture;
 let angle;
 let scene = new Object3D();
 let worldCamera = new Object3D();
 let controls, cameraControlsObject, cameraControlsYawObject, cameraControlsPitchObject;
-let button1Pressed = false; let button2Pressed = false; let button3Pressed = false;
-let button4Pressed = false; let button5Pressed = false; let button6Pressed = false;
+let oldYawRotation;
+let oldPitchRotation;
+let button1Pressed = false, button2Pressed = false, button3Pressed = false, 
+	button4Pressed = false, button5Pressed = false, button6Pressed = false;
 // the following variables will be used to calculate rotations and directions from the camera
 let cameraDirectionVector = new Vector3(); //for moving where the camera is looking
 let cameraRightVector = new Vector3(); //for strafing the camera right and left
@@ -49,6 +61,7 @@ let cameraWorldQuaternion = new Quaternion(); //for rotating scene objects to ma
 let cameraRotationSpeed = 1;
 let camFlightSpeed = 10;
 let cameraIsMoving = false;
+let uniformLocation_uCameraIsMoving;
 let uniformLocation_uCameraMatrix;
 let el;
 let cameraMatrixElementsArray = new Float32Array(16);
@@ -339,25 +352,20 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
 gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
 
-// Create a texture.
-uTexture = gl.createTexture();
 
-// use texture unit 0
-gl.activeTexture(gl.TEXTURE0 + 0);
 
-// bind to the TEXTURE_2D bind point of texture unit 0
-gl.bindTexture(gl.TEXTURE_2D, uTexture);
-
-// Fill the texture with a 1x1 blue pixel.
-gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 255, 255]));
+// Create a regular diffuse color texture.
+uDiffuseTexture = gl.createTexture();
 
 // Asynchronously load an image
 image = new Image();
 image.src = "textures/f-texture.png";
 image.addEventListener('load', function ()
 {
-	// Now that the image has loaded make copy it to the texture.
-	gl.bindTexture(gl.TEXTURE_2D, uTexture);
+	// use texture unit 1
+	gl.activeTexture(gl.TEXTURE1);
+	// Now that the image has loaded, copy it to the texture.
+	gl.bindTexture(gl.TEXTURE_2D, uDiffuseTexture);
 	gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 	//gl.generateMipmap(gl.TEXTURE_2D);
@@ -367,11 +375,57 @@ image.addEventListener('load', function ()
 
 
 
+// create a target texture to render the raytraced image to
+const targetTextureWidth = gl.canvas.width;
+const targetTextureHeight = gl.canvas.height;
+const uRayTracedImageTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
+// define size and format of level 0
+const level = 0;
+const internalFormat = gl.RGBA32F;
+const border = 0;
+const format = gl.RGBA;
+const type = gl.FLOAT;
+const data = null;
+gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, targetTextureWidth, targetTextureHeight, border, format, type, data);
+
+// set the filtering so we don't need mips
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+
+// create a target texture to render the copied screen image to
+const uPreviousScreenImageTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
+gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, targetTextureWidth, targetTextureHeight, border, format, type, data);
+
+// set the filtering so we don't need mips
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+
+// Create and bind the framebuffer
+const rayTracedImage_FrameBuffer = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, rayTracedImage_FrameBuffer);
+// attach the texture as the first color attachment
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uRayTracedImageTexture, level);
+
+
+// Create and bind the framebuffer
+const previousScreenImage_FrameBuffer = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, previousScreenImage_FrameBuffer);
+// attach the texture as the first color attachment
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uPreviousScreenImageTexture, level);
+
+
+
 /* Step3: Create and compile Shader programs */
 
-// Vertex shader source code
-vertCode =
-	`#version 300 es
+// common Vertex shader source code
+commonVertCode =
+`#version 300 es
 
 precision highp float;
 precision highp int;
@@ -386,23 +440,69 @@ void main(void)
 `;
 
 //Create a vertex shader object
-vertShader = gl.createShader(gl.VERTEX_SHADER);
+commonVertShader = gl.createShader(gl.VERTEX_SHADER);
 
 //Attach vertex shader source code
-gl.shaderSource(vertShader, vertCode);
+gl.shaderSource(commonVertShader, commonVertCode);
 
 //Compile the vertex shader
-gl.compileShader(vertShader);
+gl.compileShader(commonVertShader);
 
-vertStatus = gl.getShaderParameter(vertShader, gl.COMPILE_STATUS);
-vertErrors = gl.getShaderInfoLog(vertShader);
+vertStatus = gl.getShaderParameter(commonVertShader, gl.COMPILE_STATUS);
+vertErrors = gl.getShaderInfoLog(commonVertShader);
 if (!vertStatus || vertErrors != '')
-	console.error(vertErrors + '\n' + addLineNumbers(gl.getShaderSource(vertShader)));
+	console.error(vertErrors + '\n' + addLineNumbers(gl.getShaderSource(commonVertShader)));
+
+//screenCopyFragShader source code
+screenCopyFragCode =
+`#version 300 es
+
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+uniform sampler2D uRayTracedImageTexture;
+out vec4 pixelColor; // final pixel color output
+
+void main()
+{	
+	pixelColor = texelFetch(uRayTracedImageTexture, ivec2(gl_FragCoord.xy), 0);
+}
+`;
+
+//screenOutputFragShader source code
+screenOutputFragCode =
+`#version 300 es
+
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+uniform sampler2D uAccumulationBufferTexture;
+out vec4 pixelColor; // final pixel color output
+
+vec3 ReinhardToneMapping(vec3 color)
+{
+	///color *= uToneMappingExposure;
+	return clamp(color / (vec3(1) + color), 0.0, 1.0);
+}
+
+void main()
+{	
+	pixelColor = texelFetch(uAccumulationBufferTexture, ivec2(gl_FragCoord.xy), 0);
+
+	// apply tone mapping (brings pixel into 0.0-1.0 rgb color range)
+	pixelColor.rgb = ReinhardToneMapping(pixelColor.rgb);
+
+	// lastly, apply gamma correction (gives more intensity/brightness range where it's needed)
+	pixelColor = clamp(vec4( pow(pixelColor.rgb, vec3(0.4545)), 1.0 ), 0.0, 1.0);	
+}
+`;
 
 
-//Fragment shader source code
-fragCode =
-	`#version 300 es
+//rayTracingFragShader source code
+rayTracingFragCode =
+`#version 300 es
 
 precision highp float;
 precision highp int;
@@ -421,7 +521,8 @@ precision highp sampler2D;
 #define N_SPHERES 5
 #define N_BOXES 1
 
-uniform sampler2D uTexture;
+uniform sampler2D uPreviousScreenImageTexture;
+uniform sampler2D uDiffuseTexture;
 uniform mat4 uMatrices[2];
 uniform mat4 uCameraMatrix;
 uniform vec2 uResolution;
@@ -429,6 +530,7 @@ uniform float uTime;
 uniform float uFrameCounter;
 uniform float uULen;
 uniform float uVLen;
+uniform bool uCameraIsMoving;
 
 out vec4 pixelColor; // final pixel color output
 
@@ -746,7 +848,7 @@ vec3 CalculateRadiance()
 
 		if (hitType == DIFFUSE)
 		{
-			hitColor = pow(texture(uTexture, hitPoint.xy).rgb, vec3(2.2));
+			hitColor = pow(texture(uDiffuseTexture, hitPoint.xy).rgb, vec3(2.2));
 
 			bounceIsSpecular = false;
 			colorMask *= hitColor;
@@ -868,7 +970,7 @@ vec3 CalculateRadiance()
 					hitColor = checkColor0;
 				else hitColor = checkColor1; */
 
-				hitColor = pow(texture(uTexture, hitPoint.xz * vec2(0.5,-0.5)).rgb, vec3(2.2));
+				hitColor = pow(texture(uDiffuseTexture, hitPoint.xz * vec2(0.5,-0.5)).rgb, vec3(2.2));
 			}
 
 			bounceIsSpecular = false;
@@ -942,7 +1044,7 @@ void main()
 	vec3 lookTarget = vec3(0,0,0);
 	vec3 lookDirection = normalize( lookTarget - cameraPosition );
 	// camera looks down -Z axis, but the 'camForward' basis vector must point the opposite way, so that it points to +Z axis
-	// in the end, we need all camera basis vectors pointing to +X, +Y, and +Z axes: 
+	// in the end, we need all camera basis vectors pointing to positive +X, +Y, and +Z axes: 
 	// camRight points along the +X axis, camUp points along the +Y axis, 'camForward' points along the +Z axis
 	camForward = -lookDirection; // by flipping this around, we get back to the true 'camForward' basis vector, (even though the camera 'looks' in the opposite Z direction)
 	camRight = cross(worldUp, camForward);
@@ -970,47 +1072,113 @@ void main()
 	DefineScene();
 
 	// calculate pixel color through ray tracing
-	pixelColor.rgb = CalculateRadiance();
+	vec3 currentPixelColor = CalculateRadiance();
 
-	// apply tone mapping (brings pixel into 0.0-1.0 rgb color range)
-	pixelColor.rgb = ReinhardToneMapping(pixelColor.rgb);
+	vec3 previousPixelColor = texelFetch(uPreviousScreenImageTexture, ivec2(gl_FragCoord.xy), 0).rgb;
 
-	// lastly, apply gamma correction (gives more intensity/brightness range where it's needed)
-	pixelColor = clamp(vec4( pow(pixelColor.rgb, vec3(0.4545)), 1.0 ), 0.0, 1.0);
+	// for dynamic scenes
+	if (uCameraIsMoving) // camera is currently moving
+	{
+		previousPixelColor *= 0.5; // motion-blur trail amount (old image)
+		currentPixelColor *= 0.5; // brightness of new image (noisy)
+	}
+	// else
+	// {
+	// 	previousPixelColor *= 0.9; // motion-blur trail amount (old image)
+	// 	currentPixelColor *= 0.1; // brightness of new image (noisy)
+	// }
+
+	pixelColor = vec4(previousPixelColor + currentPixelColor, 1);
 
 } // end void main()
 `;
 
-
-// Create fragment shader object
-fragShader = gl.createShader(gl.FRAGMENT_SHADER);
+////////////////////////////////////////////////////////////////////
+// Create screenCopy shader object
+screenCopyFragShader = gl.createShader(gl.FRAGMENT_SHADER);
 
 // Attach fragment shader source code
-gl.shaderSource(fragShader, fragCode);
+gl.shaderSource(screenCopyFragShader, screenCopyFragCode);
 
 // Compile the fragment shader
-gl.compileShader(fragShader);
+gl.compileShader(screenCopyFragShader);
 
-fragStatus = gl.getShaderParameter(fragShader, gl.COMPILE_STATUS);
-fragErrors = gl.getShaderInfoLog(fragShader);
+fragStatus = gl.getShaderParameter(screenCopyFragShader, gl.COMPILE_STATUS);
+fragErrors = gl.getShaderInfoLog(screenCopyFragShader);
 if (!fragStatus || fragErrors != '')
-	console.error(fragErrors + '\n' + addLineNumbers(gl.getShaderSource(fragShader)));
-
+	console.error(fragErrors + '\n' + addLineNumbers(gl.getShaderSource(screenCopyFragShader)));
 
 // Create a shader program object to store combined shader program
-shaderProgram = gl.createProgram();
+screenCopyShaderProgram = gl.createProgram();
 
 // Attach a vertex shader
-gl.attachShader(shaderProgram, vertShader);
+gl.attachShader(screenCopyShaderProgram, commonVertShader);
 
 // Attach a fragment shader
-gl.attachShader(shaderProgram, fragShader);
+gl.attachShader(screenCopyShaderProgram, screenCopyFragShader);
 
 // Link both programs
-gl.linkProgram(shaderProgram);
+gl.linkProgram(screenCopyShaderProgram);
 
-// Use the combined shader program object
-gl.useProgram(shaderProgram);
+
+
+////////////////////////////////////////////////////////////////////
+// Create final screenOutput shader object
+screenOutputFragShader = gl.createShader(gl.FRAGMENT_SHADER);
+
+// Attach fragment shader source code
+gl.shaderSource(screenOutputFragShader, screenOutputFragCode);
+
+// Compile the fragment shader
+gl.compileShader(screenOutputFragShader);
+
+fragStatus = gl.getShaderParameter(screenOutputFragShader, gl.COMPILE_STATUS);
+fragErrors = gl.getShaderInfoLog(screenOutputFragShader);
+if (!fragStatus || fragErrors != '')
+	console.error(fragErrors + '\n' + addLineNumbers(gl.getShaderSource(screenOutputFragShader)));
+
+// Create a shader program object to store combined shader program
+screenOutputShaderProgram = gl.createProgram();
+
+// Attach a vertex shader
+gl.attachShader(screenOutputShaderProgram, commonVertShader);
+
+// Attach a fragment shader
+gl.attachShader(screenOutputShaderProgram, screenCopyFragShader);
+
+// Link both programs
+gl.linkProgram(screenOutputShaderProgram);
+
+
+
+///////////////////////////////////////////////////
+// Create rayTracing fragment shader object
+rayTracingFragShader = gl.createShader(gl.FRAGMENT_SHADER);
+
+// Attach fragment shader source code
+gl.shaderSource(rayTracingFragShader, rayTracingFragCode);
+
+// Compile the fragment shader
+gl.compileShader(rayTracingFragShader);
+
+fragStatus = gl.getShaderParameter(rayTracingFragShader, gl.COMPILE_STATUS);
+fragErrors = gl.getShaderInfoLog(rayTracingFragShader);
+if (!fragStatus || fragErrors != '')
+	console.error(fragErrors + '\n' + addLineNumbers(gl.getShaderSource(rayTracingFragShader)));
+
+// Create a shader program object to store combined shader program
+rayTracingShaderProgram = gl.createProgram();
+
+// Attach a vertex shader
+gl.attachShader(rayTracingShaderProgram, commonVertShader);
+
+// Attach a fragment shader
+gl.attachShader(rayTracingShaderProgram, rayTracingFragShader);
+
+// Link both programs
+gl.linkProgram(rayTracingShaderProgram);
+///////////////////////////////////////////////////////////////////////
+
 
 
 /* Step 4: Associate the shader programs to buffer objects */
@@ -1019,7 +1187,7 @@ gl.useProgram(shaderProgram);
 gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
 
 //Get the attribute location
-coord = gl.getAttribLocation(shaderProgram, "coordinates");
+coord = gl.getAttribLocation(rayTracingShaderProgram, "coordinates");
 
 //point an attribute to the currently bound VBO
 gl.vertexAttribPointer(coord, 2, gl.FLOAT, false, 0, 0);
@@ -1028,13 +1196,20 @@ gl.vertexAttribPointer(coord, 2, gl.FLOAT, false, 0, 0);
 gl.enableVertexAttribArray(coord);
 
 //get access to uniform locations
-uniformLocation_uMatrices = gl.getUniformLocation(shaderProgram, 'uMatrices');
-uniformLocation_uCameraMatrix = gl.getUniformLocation(shaderProgram, 'uCameraMatrix');
-uniformLocation_uTime = gl.getUniformLocation(shaderProgram, 'uTime');
-uniformLocation_uFrameCounter = gl.getUniformLocation(shaderProgram, 'uFrameCounter');
-uniformLocation_uResolution = gl.getUniformLocation(shaderProgram, 'uResolution');
-uniformLocation_uULen = gl.getUniformLocation(shaderProgram, 'uULen');
-uniformLocation_uVLen = gl.getUniformLocation(shaderProgram, 'uVLen');
+uniformLocation_uRayTracedImageTexture = gl.getUniformLocation(screenCopyShaderProgram, 'uRayTracedImageTexture');
+
+uniformLocation_uAccumulationBufferTexture = gl.getUniformLocation(screenOutputShaderProgram, 'uAccumulationBufferTexture');
+
+uniformLocation_uPreviousScreenImageTexture = gl.getUniformLocation(rayTracingShaderProgram, 'uPreviousScreenImageTexture');
+uniformLocation_uDiffuseTexture = gl.getUniformLocation(rayTracingShaderProgram, 'uDiffuseTexture');
+uniformLocation_uMatrices = gl.getUniformLocation(rayTracingShaderProgram, 'uMatrices');
+uniformLocation_uCameraMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraMatrix');
+uniformLocation_uCameraIsMoving = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraIsMoving');
+uniformLocation_uTime = gl.getUniformLocation(rayTracingShaderProgram, 'uTime');
+uniformLocation_uFrameCounter = gl.getUniformLocation(rayTracingShaderProgram, 'uFrameCounter');
+uniformLocation_uResolution = gl.getUniformLocation(rayTracingShaderProgram, 'uResolution');
+uniformLocation_uULen = gl.getUniformLocation(rayTracingShaderProgram, 'uULen');
+uniformLocation_uVLen = gl.getUniformLocation(rayTracingShaderProgram, 'uVLen');
 
 
 /* Step5: Drawing the required objects (2 triangles) */
@@ -1076,6 +1251,8 @@ function resizeCanvasToDisplaySize(canvas)
 
 	if (needResize || appJustStarted) 
 	{
+		cameraIsMoving = true;
+
 		aspectRatio = canvas.clientWidth / canvas.clientHeight;
 		uVLen = Math.tan(degToRad(FOV * 0.5));
 		uULen = uVLen * aspectRatio;
@@ -1089,6 +1266,13 @@ function resizeCanvasToDisplaySize(canvas)
 		resolutionX = canvas.width;
 		resolutionY = canvas.height;
 		gl.uniform2f(uniformLocation_uResolution, resolutionX, resolutionY);
+
+		// resize render target textures as well
+		gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		
+		gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 
 		appJustStarted = false;
 	}
@@ -1107,6 +1291,14 @@ function getTime()
 
 function animate() 
 {
+
+	// reset variables
+	cameraIsMoving = false;
+
+	// the following gl.useProgram needs to be here in order to set the correct uniforms inside resizeCanvasToDisplaySize()
+	// STEP 1: Perform RayTracing then render to the target: uRayTracedImageTexture
+	gl.useProgram(rayTracingShaderProgram);
+
 	resizeCanvasToDisplaySize(gl.canvas);
 
 	getTime();
@@ -1115,6 +1307,22 @@ function animate()
 		uFrameCounter = 1;
 
 	uFrameCounter += 1;
+
+	// check user controls
+	if (mouseControl)
+	{
+		// movement detected
+		if (oldYawRotation != cameraControlsYawObject.rotation.y ||
+			oldPitchRotation != cameraControlsPitchObject.rotation.x)
+		{
+			cameraIsMoving = true;
+		}
+
+		// save state for next frame
+		oldYawRotation = cameraControlsYawObject.rotation.y;
+		oldPitchRotation = cameraControlsPitchObject.rotation.x;
+
+	} // end if (mouseControl)
 
 	// this gives us a vector in the direction that the camera is pointing,
 	// which will be useful for moving the camera 'forward' and shooting projectiles in that direction
@@ -1194,6 +1402,7 @@ function animate()
 	}
 
 	// refresh uniforms
+	gl.uniform1f(uniformLocation_uCameraIsMoving, cameraIsMoving);
 	gl.uniform1f(uniformLocation_uTime, uTime);
 	gl.uniform1f(uniformLocation_uFrameCounter, uFrameCounter);
 
@@ -1216,14 +1425,57 @@ function animate()
 	//worldCamera.lookAt(scene.position);
 	//worldCamera.rotateY(Math.PI);
 	
-	
 
 	// send camera's Matrix to the GPU
 	el = worldCamera.matrixWorld.elements;
 	cameraMatrixElementsArray.set(el);
 	gl.uniformMatrix4fv(uniformLocation_uCameraMatrix, false, cameraMatrixElementsArray);
 
+	
+
+	gl.activeTexture(gl.TEXTURE0);
+	gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
+	// Tell the shader to use texture unit 0 for uPreviousScreenImageTexture
+	gl.uniform1i(uniformLocation_uPreviousScreenImageTexture, 0);
+	
+
+	gl.activeTexture(gl.TEXTURE1);
+	gl.bindTexture(gl.TEXTURE_2D, uDiffuseTexture);
+	// Tell the shader to use texture unit 1 for uDiffuseTexture
+	gl.uniform1i(uniformLocation_uDiffuseTexture, 1);
+
+	// render to the targetTexture
+	gl.bindFramebuffer(gl.FRAMEBUFFER, rayTracedImage_FrameBuffer);
 	drawScreenQuad();
+
+
+	// STEP 2: Screen Copy
+	gl.useProgram(screenCopyShaderProgram);
+
+	gl.activeTexture(gl.TEXTURE0);
+	// copy the scene with the texture we just rendered to
+	gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
+	// Tell the shader to use texture unit 0 for uRayTracedImageTexture
+	gl.uniform1i(uniformLocation_uRayTracedImageTexture, 0);
+
+	// render to the target texture
+	gl.bindFramebuffer(gl.FRAMEBUFFER, previousScreenImage_FrameBuffer);
+	drawScreenQuad();
+
+
+	// STEP 3: Screen Output
+	gl.useProgram(screenOutputShaderProgram);
+
+	gl.activeTexture(gl.TEXTURE0);
+	// copy the scene with the texture we just rendered to
+	gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
+	// Tell the shader to use texture unit 0 for uRayTracedImageTexture
+	gl.uniform1i(uniformLocation_uAccumulationBufferTexture, 0);
+
+	// render to the canvas
+	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	drawScreenQuad();
+
 
 	//infoElement.innerHTML = "Samples: " + sampleCount;
 
