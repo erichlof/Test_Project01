@@ -31,6 +31,10 @@ let uniformLocation_uTime;
 let oldTime, newTime, frameTime;
 let uFrameCounter = 1;
 let uniformLocation_uFrameCounter;
+let sampleCounter = 0;
+let uOneOverSampleCounter = 1;
+let uniformLocation_uOneOverSampleCounter;
+let sceneIsDynamic = true;//false;
 let mouseControl = true;
 let isPaused = true;
 let pointerlockChange;
@@ -60,7 +64,8 @@ let cameraUpVector = new Vector3(); //for moving camera up and down
 let cameraWorldQuaternion = new Quaternion(); //for rotating scene objects to match camera's current rotation
 let cameraRotationSpeed = 1;
 let camFlightSpeed = 10;
-let cameraIsMoving = false;
+let uCameraIsMoving = false;
+let cameraRecentlyMoving = false;
 let uniformLocation_uCameraIsMoving;
 let uniformLocation_uCameraMatrix;
 let el;
@@ -326,6 +331,8 @@ canvas = document.getElementById('mycanvas');
 
 gl = canvas.getContext('webgl2');
 
+gl.getExtension('EXT_color_buffer_float');
+
 
 /* Step2: Define the geometry and store it in buffer objects */
 
@@ -376,48 +383,19 @@ image.addEventListener('load', function ()
 
 
 // create a target texture to render the raytraced image to
-const targetTextureWidth = gl.canvas.width;
-const targetTextureHeight = gl.canvas.height;
 const uRayTracedImageTexture = gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
-// define size and format of level 0
-const level = 0;
-const internalFormat = gl.RGBA32F;
-const border = 0;
-const format = gl.RGBA;
-const type = gl.FLOAT;
-const data = null;
-gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, targetTextureWidth, targetTextureHeight, border, format, type, data);
-
-// set the filtering so we don't need mips
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 
 // create a target texture to render the copied screen image to
 const uPreviousScreenImageTexture = gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
-gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, targetTextureWidth, targetTextureHeight, border, format, type, data);
-
-// set the filtering so we don't need mips
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 
 // Create and bind the framebuffer
 const rayTracedImage_FrameBuffer = gl.createFramebuffer();
-gl.bindFramebuffer(gl.FRAMEBUFFER, rayTracedImage_FrameBuffer);
-// attach the texture as the first color attachment
-gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uRayTracedImageTexture, level);
 
 
 // Create and bind the framebuffer
 const previousScreenImage_FrameBuffer = gl.createFramebuffer();
-gl.bindFramebuffer(gl.FRAMEBUFFER, previousScreenImage_FrameBuffer);
-// attach the texture as the first color attachment
-gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uPreviousScreenImageTexture, level);
 
 
 
@@ -462,6 +440,7 @@ precision highp int;
 precision highp sampler2D;
 
 uniform sampler2D uRayTracedImageTexture;
+
 out vec4 pixelColor; // final pixel color output
 
 void main()
@@ -479,6 +458,8 @@ precision highp int;
 precision highp sampler2D;
 
 uniform sampler2D uAccumulationBufferTexture;
+uniform float uOneOverSampleCounter;
+
 out vec4 pixelColor; // final pixel color output
 
 vec3 ReinhardToneMapping(vec3 color)
@@ -491,11 +472,13 @@ void main()
 {	
 	pixelColor = texelFetch(uAccumulationBufferTexture, ivec2(gl_FragCoord.xy), 0);
 
+	pixelColor *= uOneOverSampleCounter;
+
 	// apply tone mapping (brings pixel into 0.0-1.0 rgb color range)
 	pixelColor.rgb = ReinhardToneMapping(pixelColor.rgb);
 
 	// lastly, apply gamma correction (gives more intensity/brightness range where it's needed)
-	pixelColor = clamp(vec4( pow(pixelColor.rgb, vec3(0.4545)), 1.0 ), 0.0, 1.0);	
+	pixelColor = clamp(vec4( pow(pixelColor.rgb, vec3(0.4545)), 1.0 ), 0.0, 1.0);
 }
 `;
 
@@ -1076,17 +1059,28 @@ void main()
 
 	vec3 previousPixelColor = texelFetch(uPreviousScreenImageTexture, ivec2(gl_FragCoord.xy), 0).rgb;
 
+	// // for static scenes
+	// if (uFrameCounter == 1.0) // camera just moved after being still
+	// {
+	// 	previousPixelColor = vec3(0); // clear rendering accumulation buffer
+	// }
+	// else if (uCameraIsMoving) // camera is currently moving
+	// {
+	// 	previousPixelColor *= 0.5; // motion-blur trail amount (old image)
+	// 	currentPixelColor *= 0.5; // brightness of new image (noisy)
+	// }
+
 	// for dynamic scenes
 	if (uCameraIsMoving) // camera is currently moving
 	{
 		previousPixelColor *= 0.5; // motion-blur trail amount (old image)
 		currentPixelColor *= 0.5; // brightness of new image (noisy)
 	}
-	// else
-	// {
-	// 	previousPixelColor *= 0.9; // motion-blur trail amount (old image)
-	// 	currentPixelColor *= 0.1; // brightness of new image (noisy)
-	// }
+	else
+	{
+		previousPixelColor *= 0.6; // motion-blur trail amount (old image)
+		currentPixelColor *= 0.4; // brightness of new image (noisy)
+	}
 
 	pixelColor = vec4(previousPixelColor + currentPixelColor, 1);
 
@@ -1144,7 +1138,7 @@ screenOutputShaderProgram = gl.createProgram();
 gl.attachShader(screenOutputShaderProgram, commonVertShader);
 
 // Attach a fragment shader
-gl.attachShader(screenOutputShaderProgram, screenCopyFragShader);
+gl.attachShader(screenOutputShaderProgram, screenOutputFragShader);
 
 // Link both programs
 gl.linkProgram(screenOutputShaderProgram);
@@ -1199,6 +1193,7 @@ gl.enableVertexAttribArray(coord);
 uniformLocation_uRayTracedImageTexture = gl.getUniformLocation(screenCopyShaderProgram, 'uRayTracedImageTexture');
 
 uniformLocation_uAccumulationBufferTexture = gl.getUniformLocation(screenOutputShaderProgram, 'uAccumulationBufferTexture');
+uniformLocation_uOneOverSampleCounter = gl.getUniformLocation(screenOutputShaderProgram, 'uOneOverSampleCounter');
 
 uniformLocation_uPreviousScreenImageTexture = gl.getUniformLocation(rayTracingShaderProgram, 'uPreviousScreenImageTexture');
 uniformLocation_uDiffuseTexture = gl.getUniformLocation(rayTracingShaderProgram, 'uDiffuseTexture');
@@ -1251,7 +1246,7 @@ function resizeCanvasToDisplaySize(canvas)
 
 	if (needResize || appJustStarted) 
 	{
-		cameraIsMoving = true;
+		uCameraIsMoving = true;
 
 		aspectRatio = canvas.clientWidth / canvas.clientHeight;
 		uVLen = Math.tan(degToRad(FOV * 0.5));
@@ -1269,10 +1264,31 @@ function resizeCanvasToDisplaySize(canvas)
 
 		// resize render target textures as well
 		gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-		
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.FLOAT, null);
+		// set the filtering so we don't need mips
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+		gl.bindFramebuffer(gl.FRAMEBUFFER, rayTracedImage_FrameBuffer);
+		// attach the texture as the first color attachment
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uRayTracedImageTexture, 0);
+
+
 		gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.FLOAT, null);
+		// set the filtering so we don't need mips
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		
+		gl.bindFramebuffer(gl.FRAMEBUFFER, previousScreenImage_FrameBuffer);
+		// attach the texture as the first color attachment
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, uPreviousScreenImageTexture, 0);
+
+		//gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 
 		appJustStarted = false;
 	}
@@ -1293,7 +1309,7 @@ function animate()
 {
 
 	// reset variables
-	cameraIsMoving = false;
+	uCameraIsMoving = false;
 
 	// the following gl.useProgram needs to be here in order to set the correct uniforms inside resizeCanvasToDisplaySize()
 	// STEP 1: Perform RayTracing then render to the target: uRayTracedImageTexture
@@ -1303,11 +1319,6 @@ function animate()
 
 	getTime();
 
-	if (uFrameCounter > 1000)
-		uFrameCounter = 1;
-
-	uFrameCounter += 1;
-
 	// check user controls
 	if (mouseControl)
 	{
@@ -1315,7 +1326,7 @@ function animate()
 		if (oldYawRotation != cameraControlsYawObject.rotation.y ||
 			oldPitchRotation != cameraControlsPitchObject.rotation.x)
 		{
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 
 		// save state for next frame
@@ -1343,32 +1354,32 @@ function animate()
 		if ((keyPressed('w') || button3Pressed) && !(keyPressed('s') || button4Pressed))
 		{
 			cameraControlsObject.position.add(cameraDirectionVector.multiplyScalar(camFlightSpeed * frameTime));
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 		if ((keyPressed('s') || button4Pressed) && !(keyPressed('w') || button3Pressed))
 		{
 			cameraControlsObject.position.sub(cameraDirectionVector.multiplyScalar(camFlightSpeed * frameTime));
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 		if ((keyPressed('a') || button1Pressed) && !(keyPressed('d') || button2Pressed))
 		{
 			cameraControlsObject.position.sub(cameraRightVector.multiplyScalar(camFlightSpeed * frameTime));
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 		if ((keyPressed('d') || button2Pressed) && !(keyPressed('a') || button1Pressed))
 		{
 			cameraControlsObject.position.add(cameraRightVector.multiplyScalar(camFlightSpeed * frameTime));
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 		if (keyPressed('q') && !keyPressed('z'))
 		{
 			cameraControlsObject.position.add(cameraUpVector.multiplyScalar(camFlightSpeed * frameTime));
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 		if (keyPressed('z') && !keyPressed('q'))
 		{
 			cameraControlsObject.position.sub(cameraUpVector.multiplyScalar(camFlightSpeed * frameTime));
-			cameraIsMoving = true;
+			uCameraIsMoving = true;
 		}
 	} // end if (!isPaused)
 
@@ -1383,7 +1394,7 @@ function animate()
 		gl.uniform1f(uniformLocation_uULen, uULen);
 		gl.uniform1f(uniformLocation_uVLen, uVLen);
 
-		cameraIsMoving = true;
+		uCameraIsMoving = true;
 		increaseFOV = false;
 	}
 	if (decreaseFOV)
@@ -1397,12 +1408,39 @@ function animate()
 		gl.uniform1f(uniformLocation_uULen, uULen);
 		gl.uniform1f(uniformLocation_uVLen, uVLen);
 
-		cameraIsMoving = true;
+		uCameraIsMoving = true;
 		decreaseFOV = false;
 	}
 
+	if (uFrameCounter > 1000)
+		uFrameCounter = 1;
+
+	if (!uCameraIsMoving)
+	{
+		if (sceneIsDynamic)
+			sampleCounter = 1.0; // reset for continuous updating of image
+		else sampleCounter += 1.0; // for progressive refinement of image
+
+		uFrameCounter += 1.0;
+
+		cameraRecentlyMoving = false;
+	}
+
+	if (uCameraIsMoving)
+	{
+		sampleCounter = 1.0;
+		uFrameCounter += 1.0;
+
+		if (!cameraRecentlyMoving)
+		{
+			uFrameCounter = 1.0;
+			cameraRecentlyMoving = true;
+		}
+	}
+
+
 	// refresh uniforms
-	gl.uniform1f(uniformLocation_uCameraIsMoving, cameraIsMoving);
+	gl.uniform1f(uniformLocation_uCameraIsMoving, uCameraIsMoving);
 	gl.uniform1f(uniformLocation_uTime, uTime);
 	gl.uniform1f(uniformLocation_uFrameCounter, uFrameCounter);
 
@@ -1471,6 +1509,10 @@ function animate()
 	gl.bindTexture(gl.TEXTURE_2D, uRayTracedImageTexture);
 	// Tell the shader to use texture unit 0 for uRayTracedImageTexture
 	gl.uniform1i(uniformLocation_uAccumulationBufferTexture, 0);
+	
+
+	uOneOverSampleCounter = 1.0 / sampleCounter;
+	gl.uniform1f(uniformLocation_uOneOverSampleCounter, uOneOverSampleCounter);
 
 	// render to the canvas
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
