@@ -1,6 +1,6 @@
 let canvas;
-let ctx;
 let gl;
+let stats;
 let vertices;
 let vertex_buffer;
 let commonVertCode;
@@ -35,7 +35,8 @@ let sampleCounter = 0;
 let uOneOverSampleCounter = 1;
 let uniformLocation_uOneOverSampleCounter;
 let windowIsBeingResized = true;
-let sceneIsDynamic = true;//false;
+let uSceneIsDynamic;
+let uniformLocation_uSceneIsDynamic;
 let mouseControl = true;
 let isPaused = true;
 let pointerlockChange;
@@ -66,6 +67,7 @@ let cameraRotationSpeed = 1;
 let camFlightSpeed = 10;
 let uCameraIsMoving = false;
 let cameraRecentlyMoving = false;
+let mobileInPortraitMode;
 let uniformLocation_uCameraIsMoving;
 let uniformLocation_uCameraMatrix;
 let el;
@@ -80,6 +82,11 @@ for (let i = 0; i < numOfMatrices; i++)
 {
 	uMatrices.push(new Matrix4());
 }
+
+let cameraInfoElement = document.getElementById('cameraInfo');
+cameraInfoElement.style.cursor = "default";
+cameraInfoElement.style.userSelect = "none";
+cameraInfoElement.style.MozUserSelect = "none";
 
 
 let FirstPersonCameraControls = function(camera)
@@ -163,6 +170,8 @@ let FirstPersonCameraControls = function(camera)
 
 
 // Scene Setup /////////////////////////////////////////////////////////////////////////////////////
+
+uSceneIsDynamic = true;
 
 scene.add(worldCamera);
 
@@ -335,6 +344,14 @@ canvas = document.getElementById('mycanvas');
 gl = canvas.getContext('webgl2');
 
 gl.getExtension('EXT_color_buffer_float');
+
+stats = new Stats();
+stats.dom.style.position = 'absolute';
+stats.dom.style.top = '0px';
+stats.dom.style.cursor = "default";
+stats.dom.style.webkitUserSelect = "none";
+stats.dom.style.MozUserSelect = "none";
+document.body.appendChild(stats.dom);
 
 
 /* Step2: Define the geometry and store it in buffer objects */
@@ -539,6 +556,7 @@ uniform float uTime;
 uniform float uFrameCounter;
 uniform float uULen;
 uniform float uVLen;
+uniform bool uSceneIsDynamic;
 uniform bool uCameraIsMoving;
 
 out vec4 pixelColor; // final pixel color output
@@ -1085,29 +1103,35 @@ void main()
 
 	vec3 previousPixelColor = texelFetch(uPreviousScreenImageTexture, ivec2(gl_FragCoord.xy), 0).rgb;
 
-	// // for static scenes
-	// if (uFrameCounter == 1.0) // camera just moved after being still
-	// {
-	// 	previousPixelColor = vec3(0); // clear rendering accumulation buffer
-	// }
-	// else if (uCameraIsMoving) // camera is currently moving
-	// {
-	// 	previousPixelColor *= 0.5; // motion-blur trail amount (old image)
-	// 	currentPixelColor *= 0.5; // brightness of new image (noisy)
-	// }
-
 	// for dynamic scenes
-	if (uCameraIsMoving) // camera is currently moving
+	if (uSceneIsDynamic)
 	{
-		previousPixelColor *= 0.5; // motion-blur trail amount (old image)
-		currentPixelColor *= 0.5; // brightness of new image (noisy)
-	}
-	else
-	{
-		previousPixelColor *= 0.6; // motion-blur trail amount (old image)
-		currentPixelColor *= 0.4; // brightness of new image (noisy)
+		if (uCameraIsMoving) // camera is currently moving
+		{
+			previousPixelColor *= 0.5; // motion-blur trail amount (old image)
+			currentPixelColor *= 0.5; // brightness of new image (noisy)
+		}
+		else
+		{
+			previousPixelColor *= 0.6; // motion-blur trail amount (old image)
+			currentPixelColor *= 0.4; // brightness of new image (noisy)
+		}
 	}
 
+	// for static scenes
+	if (!uSceneIsDynamic)
+	{
+		if (uFrameCounter == 1.0) // camera just moved after being still
+		{
+			previousPixelColor = vec3(0); // clear rendering accumulation buffer
+		}
+		else if (uCameraIsMoving) // camera is currently moving
+		{
+			previousPixelColor *= 0.5; // motion-blur trail amount (old image)
+			currentPixelColor *= 0.5; // brightness of new image (noisy)
+		}
+	}
+	
 	pixelColor = vec4(previousPixelColor + currentPixelColor, 1);
 
 } // end void main()
@@ -1226,6 +1250,7 @@ uniformLocation_uDiffuseTexture = gl.getUniformLocation(rayTracingShaderProgram,
 uniformLocation_uMatrices = gl.getUniformLocation(rayTracingShaderProgram, 'uMatrices');
 uniformLocation_uCameraMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraMatrix');
 uniformLocation_uCameraIsMoving = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraIsMoving');
+uniformLocation_uSceneIsDynamic = gl.getUniformLocation(rayTracingShaderProgram, 'uSceneIsDynamic');
 uniformLocation_uTime = gl.getUniformLocation(rayTracingShaderProgram, 'uTime');
 uniformLocation_uFrameCounter = gl.getUniformLocation(rayTracingShaderProgram, 'uFrameCounter');
 uniformLocation_uResolution = gl.getUniformLocation(rayTracingShaderProgram, 'uResolution');
@@ -1280,18 +1305,54 @@ function animate()
 	// STEP 1: Perform RayTracing then render to the target: uRayTracedImageTexture
 	gl.useProgram(rayTracingShaderProgram);
 
+	if (mobileInPortraitMode)
+	{
+		if (gl.canvas.clientWidth > gl.canvas.clientHeight)
+		{
+			windowIsBeingResized = true;
+		}
+	}
+	if (!mobileInPortraitMode)
+	{
+		if (gl.canvas.clientWidth < gl.canvas.clientHeight)
+		{
+			windowIsBeingResized = true;
+		}
+	}
+
 	
 	if (windowIsBeingResized)
 	{
+		if (gl.canvas.clientWidth > gl.canvas.clientHeight)
+		{
+			mobileInPortraitMode = false;
+		}
+		else mobileInPortraitMode = true;
+
 		uCameraIsMoving = true;
+
+		gl.uniform1f(uniformLocation_uSceneIsDynamic, uSceneIsDynamic);
 
 		displayWidth = gl.canvas.clientWidth;
 		displayHeight = gl.canvas.clientHeight;
 
 		if (devicePixelRatio > 1)
 		{
-			displayWidth *= 0.5;
-			displayHeight *= 0.5;
+			if (mobileInPortraitMode)
+			{
+				displayWidth *= 0.4;
+				displayHeight *= 0.4;
+			}
+			else
+			{
+				displayWidth *= 0.8;
+				displayHeight *= 0.8;
+			}
+		}
+		else
+		{
+			displayWidth *= 0.85;
+			displayHeight *= 0.85;
 		}
 
 		// Make the canvas the same size
@@ -1416,7 +1477,7 @@ function animate()
 
 	if (!uCameraIsMoving)
 	{
-		if (sceneIsDynamic)
+		if (uSceneIsDynamic)
 			sampleCounter = 1.0; // reset for continuous updating of image
 		else sampleCounter += 1.0; // for progressive refinement of image
 
@@ -1518,7 +1579,11 @@ function animate()
 	drawScreenQuad();
 
 
-	//infoElement.innerHTML = "Samples: " + sampleCount;
+	//cameraInfoElement.innerHTML = "FOV: " + FOV + "<br>" + "Samples: " + sampleCounter;
+	//cameraInfoElement.innerHTML = "canvasWidth: " + document.body.clientWidth + " canvasHeight: " + document.body.clientHeight + "<br>" + "portraitMode: " + mobileInPortraitMode;
+	cameraInfoElement.innerHTML = "displayWidth: " + displayWidth + " displayHeight: " + displayHeight + "<br>" + "portraitMode: " + mobileInPortraitMode;
+
+	stats.update();
 
 	requestAnimationFrame(animate);
 }
