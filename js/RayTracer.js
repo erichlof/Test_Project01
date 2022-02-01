@@ -50,9 +50,13 @@ let displayWidth, displayHeight;
 let needResize;
 let image;
 let uDiffuseTexture;
-let angle;
+let angle, scale;
 let scene = new Object3D();
 let worldCamera = new Object3D();
+let sphere0 = new Object3D();
+let shearMatrix = new Matrix4();
+let uSphere0InvMatrix = new Matrix4();
+let uniformLocation_uSphere0InvMatrix;
 let controls, cameraControlsObject, cameraControlsYawObject, cameraControlsPitchObject;
 let oldYawRotation;
 let oldPitchRotation;
@@ -70,8 +74,6 @@ let cameraRecentlyMoving = false;
 let mobileInPortraitMode;
 let uniformLocation_uCameraIsMoving;
 let uniformLocation_uCameraMatrix;
-let el;
-let cameraMatrixElementsArray = new Float32Array(16);
 
 let uMatrices = [];
 const numOfMatrices = 2;
@@ -187,6 +189,8 @@ cameraControlsObject.position.set(0, 5, 10);
 cameraControlsPitchObject.rotation.set(Math.PI * -0.2, 0, 0);
 
 FOV = 60;
+
+sphere0.position.set(0, 0, 0);
 
 
 function addLineNumbers(string)
@@ -535,6 +539,7 @@ precision highp int;
 precision highp sampler2D;
 
 #define PI 3.14159265358979323
+#define TWO_PI 6.28318530717958648
 #define INFINITY 1000000.0
 #define POINT_LIGHT 0
 #define CHECKER 1
@@ -551,6 +556,7 @@ uniform sampler2D uPreviousScreenImageTexture;
 uniform sampler2D uDiffuseTexture;
 uniform mat4 uMatrices[2];
 uniform mat4 uCameraMatrix;
+uniform mat4 uSphere0InvMatrix;
 uniform vec2 uResolution;
 uniform float uTime;
 uniform float uFrameCounter;
@@ -643,6 +649,36 @@ float SphereIntersect( float rad, vec3 pos, vec3 rayOrigin, vec3 rayDirection )
 	return t0 > 0.0 ? t0 : t1 > 0.0 ? t1 : INFINITY;
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+float EllipsoidParamIntersect( float yMinPercent, float yMaxPercent, float phiMaxRadians, vec3 ro, vec3 rd, out vec3 n )
+//----------------------------------------------------------------------------------------------------------------------
+{
+	vec3 pHit;
+	float t, t0, t1, phi;
+	// implicit equation of a unit (radius of 1) sphere:
+	// x^2 + y^2 + z^2 - 1 = 0
+	float a = dot(rd, rd);
+	float b = 2.0 * dot(rd, ro);
+	float c = dot(ro, ro) - 1.0;
+	solveQuadratic(a, b, c, t0, t1);
+	if (t1 <= 0.0) return INFINITY;
+	t = t0 > 0.0 ? t0 : INFINITY;
+	pHit = ro + rd * t;
+	phi = mod(atan(pHit.z, pHit.x), TWO_PI);
+	if (pHit.y > yMaxPercent || pHit.y < yMinPercent || phi > phiMaxRadians)
+	{
+		t = t1;
+		pHit = ro + rd * t;
+		phi = mod(atan(pHit.z, pHit.x), TWO_PI);
+		if (pHit.y > yMaxPercent || pHit.y < yMinPercent || phi > phiMaxRadians)
+			t = INFINITY;
+	}
+	
+	n = vec3(2.0 * pHit.x, 2.0 * pHit.y, 2.0 * pHit.z);
+	n = dot(rd, n) < 0.0 ? n : -n; // flip normal if it is facing away from us
+	return t;
+}
+
 float PosY_XZRectangleIntersect( vec3 pos, float radiusU, float radiusV, vec3 rayOrigin, vec3 rayDirection )
 {
 	vec3 normal = vec3(0,1,0);
@@ -692,6 +728,7 @@ float BoxIntersect( vec3 minCorner, vec3 maxCorner, vec3 rayOrigin, vec3 rayDire
 float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, out vec3 hitNormal, out vec3 hitColor, out float hitShininess, out int hitType)
 {
 	vec3 hitPos, n;
+	vec3 rObjOrigin, rObjDirection;
 	float t = INFINITY;
 	float d;
 	bool isRayExiting;
@@ -728,6 +765,22 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, out vec3 hitNormal, out 
 			hitShininess = spheres[i].shininess;
 			hitType = spheres[i].type;
 		}
+	}
+
+	// transform ray into Ellipsoid Param's object space
+	rObjOrigin = vec3( uSphere0InvMatrix * vec4(rayOrigin, 1.0) );
+	rObjDirection = vec3( uSphere0InvMatrix * vec4(rayDirection, 0.0) );
+	
+	float angleAmount = (sin(uTime) * 0.5 + 0.5);
+	//d = EllipsoidParamIntersect(-1.0, 1.0, TWO_PI, rObjOrigin, rObjDirection, n);
+	d = EllipsoidParamIntersect(-0.8, angleAmount, PI, rObjOrigin, rObjDirection, n);
+	if (d < t)
+	{
+		t = d;
+		hitNormal = normalize(transpose(mat3(uSphere0InvMatrix)) * n);
+		hitColor = vec3(0.0, 0.3, 1.0);
+		hitShininess = 1000.0;
+		hitType = CLEARCOAT_DIFFUSE;
 	}
 
 	return t;
@@ -1066,6 +1119,8 @@ float tentFilter(float x)
 void main()
 {
 	/*
+	// simple shader-only camera implementation (commented out)
+
 	vec3 worldUp = vec3(0, 1, 0);
 	vec3 camRight, camUp, camForward;
 	vec3 lookTarget = vec3(0,0,0);
@@ -1077,7 +1132,9 @@ void main()
 	camRight = cross(worldUp, camForward);
 	camRight = normalize(camRight);
 	camUp = cross(camForward, camRight);
-	camUp = normalize(camUp); */
+	camUp = normalize(camUp); 
+	
+	*/
 
 	vec3 camRight   = vec3( uCameraMatrix[0][0],  uCameraMatrix[0][1],  uCameraMatrix[0][2]);
 	vec3 camUp      = vec3( uCameraMatrix[1][0],  uCameraMatrix[1][1],  uCameraMatrix[1][2]);
@@ -1249,6 +1306,7 @@ uniformLocation_uPreviousScreenImageTexture = gl.getUniformLocation(rayTracingSh
 uniformLocation_uDiffuseTexture = gl.getUniformLocation(rayTracingShaderProgram, 'uDiffuseTexture');
 uniformLocation_uMatrices = gl.getUniformLocation(rayTracingShaderProgram, 'uMatrices');
 uniformLocation_uCameraMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraMatrix');
+uniformLocation_uSphere0InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uSphere0InvMatrix');
 uniformLocation_uCameraIsMoving = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraIsMoving');
 uniformLocation_uSceneIsDynamic = gl.getUniformLocation(rayTracingShaderProgram, 'uSceneIsDynamic');
 uniformLocation_uTime = gl.getUniformLocation(rayTracingShaderProgram, 'uTime');
@@ -1507,8 +1565,7 @@ function animate()
 	elArray = [];
 	for (let i = 0; i < numOfMatrices; i++)
 	{
-		el = uMatrices[i].elements;
-		elArray.push(el);
+		elArray.push(uMatrices[i].elements);
 	}
 	matricesElementsArray.set(elArray);
 	gl.uniformMatrix4fv(uniformLocation_uMatrices, false, matricesElementsArray);
@@ -1525,11 +1582,30 @@ function animate()
 	
 
 	// send camera's Matrix to the GPU
-	el = worldCamera.matrixWorld.elements;
-	cameraMatrixElementsArray.set(el);
-	gl.uniformMatrix4fv(uniformLocation_uCameraMatrix, false, cameraMatrixElementsArray);
+	gl.uniformMatrix4fv(uniformLocation_uCameraMatrix, false, worldCamera.matrixWorld.elements);
 
+
+	// sphere0
+
+	// the following clears out object's matrix from last frame
+	sphere0.updateMatrixWorld(true);
+	// now build up a series of transformations on the object (position, rotation, scale, shear)
+	//sphere0.position.set(0, Math.abs(Math.sin(uTime)) * 2 + 1, 6);
+	sphere0.position.set(0, 2, 6);
+
+	//sphere0.rotation.set(0, 0, uTime % (Math.PI * 2));
+
+	//scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
+	//sphere0.scale.set(scale, scale, scale);
+			    // xy,  xz,  yx,  yz,  zx,  zy
+	// shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0);
+	// sphere0.matrixWorld.multiply(shearMatrix);
 	
+	// finally, send Sphere0's Matrix Inverse to the GPU
+	uSphere0InvMatrix.copy(sphere0.matrixWorld).invert();
+	gl.uniformMatrix4fv(uniformLocation_uSphere0InvMatrix, false, uSphere0InvMatrix.elements);
+
+	// sphere0.updateMatrixWorld(true);
 
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
