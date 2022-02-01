@@ -773,13 +773,13 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, out vec3 hitNormal, out 
 	
 	float angleAmount = (sin(uTime) * 0.5 + 0.5);
 	//d = EllipsoidParamIntersect(-1.0, 1.0, TWO_PI, rObjOrigin, rObjDirection, n);
-	d = EllipsoidParamIntersect(-0.8, angleAmount, PI, rObjOrigin, rObjDirection, n);
+	d = EllipsoidParamIntersect(-1.0, 1.0, angleAmount * TWO_PI, rObjOrigin, rObjDirection, n);
 	if (d < t)
 	{
 		t = d;
 		hitNormal = normalize(transpose(mat3(uSphere0InvMatrix)) * n);
 		hitColor = vec3(0.0, 0.3, 1.0);
-		hitShininess = 1000.0;
+		hitShininess = 0.0;
 		hitType = CLEARCOAT_DIFFUSE;
 	}
 
@@ -928,7 +928,8 @@ vec3 CalculateRadiance()
 
 		if (hitType == DIFFUSE)
 		{
-			hitColor = pow(texture(uDiffuseTexture, hitPoint.xy).rgb, vec3(2.2));
+			
+			//hitColor = pow(texture(uDiffuseTexture, hitPoint.xy).rgb, vec3(2.2));
 
 			bounceIsSpecular = false;
 			colorMask *= hitColor;
@@ -950,7 +951,7 @@ vec3 CalculateRadiance()
 
 			isShadowRay = true;
 			continue;
-		} // end if (hitType == DIFFUSE || hitType == CHECKER)
+		} // end if (hitType == DIFFUSE)
 
 
 		if (hitType == METAL)
@@ -1075,7 +1076,7 @@ vec3 CalculateRadiance()
 			isShadowRay = true;
 			continue;
 			
-		} // end if (hitType == CLEARCOAT_DIFFUSE)
+		} // end if (hitType == CLEARCOAT_DIFFUSE || hitType == CHECKER)
 
 	} // end for (int bounces = 0; bounces < 6; bounces++)
 
@@ -1570,8 +1571,8 @@ function animate()
 	matricesElementsArray.set(elArray);
 	gl.uniformMatrix4fv(uniformLocation_uMatrices, false, matricesElementsArray);
 
-	angle = degToRad(uTime * 10);
-	angle = angle % TWO_PI;
+	//angle = degToRad(uTime * 10);
+	//angle = angle % TWO_PI;
 	
 	// set camera Position
 	//worldCamera.position.set(Math.cos(angle) * 10, Math.sin(angle) * 5 + 5.5, Math.sin(angle) * 10);
@@ -1593,13 +1594,13 @@ function animate()
 	//sphere0.position.set(0, Math.abs(Math.sin(uTime)) * 2 + 1, 6);
 	sphere0.position.set(0, 2, 6);
 
-	//sphere0.rotation.set(0, 0, uTime % (Math.PI * 2));
+	sphere0.rotation.set(0, uTime % TWO_PI, 0);
 
-	//scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
-	//sphere0.scale.set(scale, scale, scale);
-			    // xy,  xz,  yx,  yz,  zx,  zy
-	// shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0);
-	// sphere0.matrixWorld.multiply(shearMatrix);
+	scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
+	//sphere0.scale.set(1, scale, 1);
+
+	shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0); // (xy, xz,  yx, yz,  zx, zy)
+	//sphere0.matrixWorld.multiply(shearMatrix);
 	
 	// finally, send Sphere0's Matrix Inverse to the GPU
 	uSphere0InvMatrix.copy(sphere0.matrixWorld).invert();
