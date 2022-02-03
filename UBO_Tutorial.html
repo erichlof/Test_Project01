@@ -1,0 +1,306 @@
+<html>
+
+<head>
+	<meta charset="utf-8" />
+	<title>UBO Example</title>
+	<style>
+		body 
+		{
+			margin: 0;
+		}
+	</style>
+</head>
+
+<body>
+	<canvas></canvas>
+	<script>
+	// Prepare our canvas
+
+	const canvas = document.querySelector("canvas");
+	const gl = canvas.getContext("webgl2");
+
+	canvas.style.width = "100%";
+	canvas.style.height = "100%";
+	canvas.width = innerWidth * devicePixelRatio;
+	canvas.height = innerHeight * devicePixelRatio;
+	gl.viewport(0, 0, innerWidth * devicePixelRatio, innerHeight * devicePixelRatio);
+
+
+const vertexShaderSource_normal = `#version 300 es
+precision highp float;
+
+in vec3 a_Position;
+
+uniform InvMatrices_UniformBlock 
+{
+	mat4 u_InvMatrices[64];
+};
+
+uniform TopLevelBVH_UniformBlock
+{
+	vec4 u_AABBData[256];
+};
+
+out vec4 color;
+
+void main(void) 
+{
+	color = vec4(u_AABBData[0].xyz, 1.0);
+	gl_PointSize = u_InvMatrices[63][3][3];
+
+	gl_Position = vec4(a_Position, 1.0);
+}
+`;
+
+const fragmentShaderSource = `#version 300 es
+precision highp float;
+
+in vec4 color;
+
+out vec4 finalColor;
+
+void main(void) 
+{
+	finalColor = color;
+}
+`;
+
+	const vertexShader_normal = gl.createShader(gl.VERTEX_SHADER);
+	const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+
+	gl.shaderSource(vertexShader_normal, vertexShaderSource_normal);
+	gl.shaderSource(fragmentShader, fragmentShaderSource);
+
+	gl.compileShader(vertexShader_normal);
+	gl.compileShader(fragmentShader);
+
+	const program_normal = gl.createProgram();
+
+	gl.attachShader(program_normal, vertexShader_normal);
+	gl.attachShader(program_normal, fragmentShader);
+
+	gl.linkProgram(program_normal);
+
+
+	const vao = gl.createVertexArray();
+
+	gl.bindVertexArray(vao);
+
+	const positionArray = new Float32Array([
+		-0.5, 0, 0,
+		 0.5, 0, 0
+	]);
+	const positionBuffer = gl.createBuffer();
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, positionArray, gl.STATIC_DRAW);
+	gl.enableVertexAttribArray(0);
+	gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+	gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+	gl.bindVertexArray(null);
+
+
+	// ==================
+	// PREPARING THE UNIFORM BUFFER OBJECT
+	// ==================
+	
+	/**
+	 * Things in PART A need only be done for each unique Uniform Block
+	 * Unique Uniform Block as in Uniform Blocks with the same structure (same variable name, order and type)
+	 **/
+
+	// ==== START OF PART A0 ====
+
+	// Get the index of the Uniform Block from any program
+	let blockIndex0 = gl.getUniformBlockIndex(program_normal, "InvMatrices_UniformBlock");
+
+	// Get the size of the Uniform Block in bytes
+	const blockSize0 = gl.getActiveUniformBlockParameter(
+		program_normal,
+		blockIndex0,
+		gl.UNIFORM_BLOCK_DATA_SIZE
+	);
+
+	// Create Uniform Buffer to store our data
+	const uboBuffer0 = gl.createBuffer();
+
+	// Bind it to tell WebGL we are working on this buffer
+	gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer0);
+
+	// Allocate memory for our buffer equal to the size of our Uniform Block
+	// We use dynamic draw because we expect to respecify the contents of the buffer frequently
+	gl.bufferData(gl.UNIFORM_BUFFER, blockSize0, gl.DYNAMIC_DRAW);
+
+	// Unbind buffer when we're done using it for now
+	// Good practice to avoid unintentionally working on it
+	gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+	// Bind the buffer to a binding point
+	// Think of it as storing the buffer into a special UBO ArrayList
+	// The second argument is the index you want to store your Uniform Buffer in
+	// Let's say you have 2 unique UBO, you'll store the first one in index 0 and the second one in index 1
+	gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, uboBuffer0);
+
+	// Name of the member variables inside of our Uniform Block
+	const uboVariableNames0 = ["u_InvMatrices"];
+
+	// Get the respective index of the member variables inside our Uniform Block
+	const uboVariableIndices0 = gl.getUniformIndices(
+		program_normal,
+		uboVariableNames0
+	);
+
+	// Get the offset of the member variables inside our Uniform Block in bytes
+	const uboVariableOffsets0 = gl.getActiveUniforms(
+		program_normal,
+		uboVariableIndices0,
+		gl.UNIFORM_OFFSET
+	);
+
+	// ==== END OF PART A0 ====
+
+
+	// ==== START OF PART A1 ====
+
+	// Get the index of the Uniform Block from any program
+	let blockIndex1 = gl.getUniformBlockIndex(program_normal, "TopLevelBVH_UniformBlock");
+
+	// Get the size of the Uniform Block in bytes
+	const blockSize1 = gl.getActiveUniformBlockParameter(
+		program_normal,
+		blockIndex1,
+		gl.UNIFORM_BLOCK_DATA_SIZE
+	);
+
+	// Create Uniform Buffer to store our data
+	const uboBuffer1 = gl.createBuffer();
+
+	// Bind it to tell WebGL we are working on this buffer
+	gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer1);
+
+	// Allocate memory for our buffer equal to the size of our Uniform Block
+	// We use dynamic draw because we expect to respecify the contents of the buffer frequently
+	gl.bufferData(gl.UNIFORM_BUFFER, blockSize1, gl.DYNAMIC_DRAW);
+
+	// Unbind buffer when we're done using it for now
+	// Good practice to avoid unintentionally working on it
+	gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+	// Bind the buffer to a binding point
+	// Think of it as storing the buffer into a special UBO ArrayList
+	// The second argument is the index you want to store your Uniform Buffer in
+	// Let's say you have 2 unique UBO, you'll store the first one in index 0 and the second one in index 1
+	gl.bindBufferBase(gl.UNIFORM_BUFFER, 1, uboBuffer1);
+
+	// Name of the member variables inside of our Uniform Block
+	const uboVariableNames1 = ["u_AABBData"];
+
+	// Get the respective index of the member variables inside our Uniform Block
+	const uboVariableIndices1 = gl.getUniformIndices(
+		program_normal,
+		uboVariableNames1
+	);
+
+	// Get the offset of the member variables inside our Uniform Block in bytes
+	const uboVariableOffsets1 = gl.getActiveUniforms(
+		program_normal,
+		uboVariableIndices1,
+		gl.UNIFORM_OFFSET
+	);
+
+	// ==== END OF PART A1 ====
+
+	
+
+
+	/**
+	 * Things in PART B is done for each program that will be using the same UBO
+	 **/
+
+	// ==== START OF PART B ====
+
+	// The 3rd argument is the binding point of our Uniform Buffer
+	// uniformBlockBinding tells WebGL to
+	// link the Uniform Block inside of this program
+	// to the Uniform Buffer at index X of our Special UBO ArrayList
+	
+	//blockIndex0 = gl.getUniformBlockIndex(program_normal, "InvMatrices_UniformBlock");
+	gl.uniformBlockBinding(program_normal, blockIndex0, 0);
+
+	//blockIndex1 = gl.getUniformBlockIndex(program_normal, "TopLevelBVH_UniformBlock");
+	gl.uniformBlockBinding(program_normal, blockIndex1, 1);
+
+	// ==== END OF PART B ====
+
+	/**
+	 * Things in PART C is done whenever the uniform data changes
+	 **/
+
+	const dataElements = 16 * 64;
+	let testArray = new Float32Array(dataElements);
+
+	const onRender = () => {
+
+		// ==== START OF PART C0 ====
+
+		gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer0);
+
+		// Push some data to our Uniform Buffer
+		for (let i = 0; i < dataElements; i++)
+		{
+			testArray[i] = Math.random() * 100.0 + 100.0;
+		}
+		
+		gl.bufferSubData(
+			gl.UNIFORM_BUFFER,
+			uboVariableOffsets0,
+			testArray,
+			0
+		);
+
+		gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+		// ==== END OF PART C0 ====
+
+
+		// ==== START OF PART C1 ====
+
+		gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer1);
+
+		// Push some data to our Uniform Buffer
+		for (let i = 0; i < dataElements; i++)
+		{
+			testArray[i] = Math.random();// * 100.0 + 100.0;
+		}
+
+		gl.bufferSubData(
+			gl.UNIFORM_BUFFER,
+			uboVariableOffsets1,
+			testArray,
+			0
+		);
+
+		gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+		// ==== END OF PART C1 ====
+
+
+		gl.bindVertexArray(vao);
+
+		gl.useProgram(program_normal);
+		gl.drawArrays(gl.POINTS, 0, 2);
+
+		gl.bindVertexArray(null);
+
+		//setTimeout(() => {
+			requestAnimationFrame(onRender);
+		//}, 200);
+	};
+
+	requestAnimationFrame(onRender);
+
+	</script>
+</body>
+
+</html>
