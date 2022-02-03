@@ -143,12 +143,12 @@ void main(void)
 	gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, uboBuffer0);
 
 	// Name of the member variables inside of our Uniform Block
-	const uboVariableNames0 = ["u_InvMatrices"];
+	const uboVariableNamesArray0 = ["u_InvMatrices"];
 
 	// Get the respective index of the member variables inside our Uniform Block
 	const uboVariableIndices0 = gl.getUniformIndices(
 		program_normal,
-		uboVariableNames0
+		uboVariableNamesArray0
 	);
 
 	// Get the offset of the member variables inside our Uniform Block in bytes
@@ -194,12 +194,12 @@ void main(void)
 	gl.bindBufferBase(gl.UNIFORM_BUFFER, 1, uboBuffer1);
 
 	// Name of the member variables inside of our Uniform Block
-	const uboVariableNames1 = ["u_AABBData"];
+	const uboVariableNamesArray1 = ["u_AABBData"];
 
 	// Get the respective index of the member variables inside our Uniform Block
 	const uboVariableIndices1 = gl.getUniformIndices(
 		program_normal,
-		uboVariableNames1
+		uboVariableNamesArray1
 	);
 
 	// Get the offset of the member variables inside our Uniform Block in bytes
