@@ -45,8 +45,9 @@ out vec4 color;
 
 void main(void) 
 {
-	color = vec4(u_AABBData[0].xyz, 1.0);
-	gl_PointSize = u_InvMatrices[63][3][3];
+	color = u_AABBData[255]; // last element in 256 Vector4's array (total size: 256 * 4(xyzw))
+
+	gl_PointSize = u_InvMatrices[63][3][3]; // last element in 64 Matrix4's array (total size: 64 * 16(mat4x4))
 
 	gl_Position = vec4(a_Position, 1.0);
 }
@@ -249,9 +250,10 @@ void main(void)
 		// Push some data to our Uniform Buffer
 		for (let i = 0; i < dataElements; i++)
 		{
-			testArray[i] = Math.random() * 100.0 + 100.0;
+			testArray[i] = Math.random() * 100.0 + 10.0;
 		}
 		
+		// corresponds to "u_InvMatrices" in shader
 		gl.bufferSubData(
 			gl.UNIFORM_BUFFER,
 			uboVariableOffsets0,
@@ -274,6 +276,7 @@ void main(void)
 			testArray[i] = Math.random();// * 100.0 + 100.0;
 		}
 
+		// corresponds to "u_AABBData" in shader
 		gl.bufferSubData(
 			gl.UNIFORM_BUFFER,
 			uboVariableOffsets1,
@@ -293,9 +296,9 @@ void main(void)
 
 		gl.bindVertexArray(null);
 
-		//setTimeout(() => {
+		setTimeout(() => {
 			requestAnimationFrame(onRender);
-		//}, 200);
+		}, 200);
 	};
 
 	requestAnimationFrame(onRender);
