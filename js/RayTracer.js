@@ -54,9 +54,12 @@ let angle, scale;
 let scene = new Object3D();
 let worldCamera = new Object3D();
 let sphere0 = new Object3D();
+let box0 = new Object3D();
 let shearMatrix = new Matrix4();
 let uSphere0InvMatrix = new Matrix4();
 let uniformLocation_uSphere0InvMatrix;
+let uBox0InvMatrix = new Matrix4();
+let uniformLocation_uBox0InvMatrix;
 let controls, cameraControlsObject, cameraControlsYawObject, cameraControlsPitchObject;
 let oldYawRotation;
 let oldPitchRotation;
@@ -190,7 +193,6 @@ cameraControlsPitchObject.rotation.set(Math.PI * -0.2, 0, 0);
 
 FOV = 60;
 
-sphere0.position.set(0, 0, 0);
 
 
 function addLineNumbers(string)
@@ -541,22 +543,25 @@ precision highp sampler2D;
 #define PI 3.14159265358979323
 #define TWO_PI 6.28318530717958648
 #define INFINITY 1000000.0
-#define POINT_LIGHT 0
+#define SPOT_LIGHT -3
+#define POINT_LIGHT -2
+#define DIRECTIONAL_LIGHT -1
 #define CHECKER 1
 #define DIFFUSE 2
 #define METAL 3
 #define TRANSPARENT 4
 #define CLEARCOAT_DIFFUSE 5
 
+#define N_DIRECTIONAL_LIGHTS 1
 #define N_POINT_LIGHTS 1
-#define N_SPHERES 5
-#define N_BOXES 1
+#define N_SPOT_LIGHTS 1
 
 uniform sampler2D uPreviousScreenImageTexture;
 uniform sampler2D uDiffuseTexture;
 uniform mat4 uMatrices[2];
 uniform mat4 uCameraMatrix;
 uniform mat4 uSphere0InvMatrix;
+uniform mat4 uBox0InvMatrix;
 uniform vec2 uResolution;
 uniform float uTime;
 uniform float uFrameCounter;
@@ -571,13 +576,13 @@ vec3 rayOrigin;
 vec3 rayDirection;
 uvec2 seed;
 
-struct PointLight{ vec3 position; vec3 color; float power; float cutoffAngle; int type; };
-struct Sphere { float radius; vec3 position; vec3 color; float shininess; int type; };
-struct Box { vec3 minCorner; vec3 maxCorner; vec3 color; float shininess; int type; };
+struct DirectionalLight{ vec3 directionTowardsLight; vec3 color; float power; int type; };
+struct PointLight{ vec3 position; vec3 color; float power; int type; };
+struct SpotLight{ vec3 position; vec3 spotLightAimingDirection; float cutoffAngle; vec3 color; float power; int type; };
 
+DirectionalLight directionalLights[N_DIRECTIONAL_LIGHTS];
 PointLight pointLights[N_POINT_LIGHTS];
-Sphere spheres[N_SPHERES];
-Box boxes[N_BOXES];
+SpotLight spotLights[N_SPOT_LIGHTS];
 
 
 vec3 ReinhardToneMapping(vec3 color)
@@ -654,29 +659,37 @@ float EllipsoidParamIntersect( float yMinPercent, float yMaxPercent, float phiMa
 //----------------------------------------------------------------------------------------------------------------------
 {
 	vec3 pHit;
-	float t, t0, t1, phi;
+	float result = INFINITY; 
+	float t0, t1, phi;
 	// implicit equation of a unit (radius of 1) sphere:
 	// x^2 + y^2 + z^2 - 1 = 0
 	float a = dot(rd, rd);
 	float b = 2.0 * dot(rd, ro);
 	float c = dot(ro, ro) - 1.0;
 	solveQuadratic(a, b, c, t0, t1);
-	if (t1 <= 0.0) return INFINITY;
-	t = t0 > 0.0 ? t0 : INFINITY;
-	pHit = ro + rd * t;
-	phi = mod(atan(pHit.z, pHit.x), TWO_PI);
-	if (pHit.y > yMaxPercent || pHit.y < yMinPercent || phi > phiMaxRadians)
+	if (t1 > 0.0)
 	{
-		t = t1;
-		pHit = ro + rd * t;
+		pHit = ro + rd * t1;
 		phi = mod(atan(pHit.z, pHit.x), TWO_PI);
-		if (pHit.y > yMaxPercent || pHit.y < yMinPercent || phi > phiMaxRadians)
-			t = INFINITY;
+		if (pHit.y <= yMaxPercent && pHit.y >= yMinPercent && phi <= phiMaxRadians)
+		{
+			result = t1;
+			n = vec3(2.0 * pHit.x, 2.0 * pHit.y, 2.0 * pHit.z);
+		}	
+	}
+	if (t0 > 0.0)
+	{
+		pHit = ro + rd * t0;
+		phi = mod(atan(pHit.z, pHit.x), TWO_PI);
+		if (pHit.y <= yMaxPercent && pHit.y >= yMinPercent && phi <= phiMaxRadians)
+		{
+			result = t0;
+			n = vec3(2.0 * pHit.x, 2.0 * pHit.y, 2.0 * pHit.z);
+		}	
 	}
 	
-	n = vec3(2.0 * pHit.x, 2.0 * pHit.y, 2.0 * pHit.z);
 	n = dot(rd, n) < 0.0 ? n : -n; // flip normal if it is facing away from us
-	return t;
+	return result;
 }
 
 float PosY_XZRectangleIntersect( vec3 pos, float radiusU, float radiusV, vec3 rayOrigin, vec3 rayDirection )
@@ -695,9 +708,35 @@ float PosY_XZRectangleIntersect( vec3 pos, float radiusU, float radiusV, vec3 ra
 	return (abs(dot(rectPosToHit, U)) > radiusU || abs(dot(rectPosToHit, V)) > radiusV) ? INFINITY : t;
 }
 
-float BoxIntersect( vec3 minCorner, vec3 maxCorner, vec3 rayOrigin, vec3 rayDirection, out vec3 normal, out bool isRayExiting )
+float UnitBoxIntersect( vec3 ro, vec3 rd, out vec3 n )
 {
-	vec3 invDir = 1.0 / rayDirection;
+	vec3 invDir = 1.0 / rd;
+	vec3 near = (vec3(-1) - ro) * invDir; // unit radius box: vec3(-1,-1,-1) min corner
+	vec3 far  = (vec3( 1) - ro) * invDir; // unit radius box: vec3(+1,+1,+1) max corner
+	vec3 tmin = min(near, far);
+	vec3 tmax = max(near, far);
+	float t0 = max( max(tmin.x, tmin.y), tmin.z);
+	float t1 = min( min(tmax.x, tmax.y), tmax.z);
+
+        if (t0 < t1)
+        {
+                if (t0 > 0.0)
+                {
+                        n = -sign(rd) * step(tmin.yzx, tmin) * step(tmin.zxy, tmin);
+                        return t0;
+                }
+                if (t1 > 0.0)
+                {
+                        n = -sign(rd) * step(tmax, tmax.yzx) * step(tmax, tmax.zxy);
+                        return t1;
+                }
+        }
+
+        return INFINITY;
+}
+
+float BoundingBoxIntersect( vec3 minCorner, vec3 maxCorner, vec3 rayOrigin, vec3 invDir )
+{
 	vec3 near = (minCorner - rayOrigin) * invDir;
 	vec3 far  = (maxCorner - rayOrigin) * invDir;
 
@@ -707,25 +746,13 @@ float BoxIntersect( vec3 minCorner, vec3 maxCorner, vec3 rayOrigin, vec3 rayDire
 	float t0 = max( max(tmin.x, tmin.y), tmin.z);
 	float t1 = min( min(tmax.x, tmax.y), tmax.z);
 
-	if (t0 > t1) return INFINITY;
-	if (t0 > 0.0) // if we are outside the box
-	{
-		normal = -sign(rayDirection) * step(tmin.yzx, tmin) * step(tmin.zxy, tmin);
-		isRayExiting = false;
-		return t0;
-	}
-	if (t1 > 0.0) // if we are inside the box
-	{
-		normal = -sign(rayDirection) * step(tmax, tmax.yzx) * step(tmax, tmax.zxy);
-		isRayExiting = true;
-		return t1;
-	}
-	return INFINITY;
+	return max(t0, 0.0) > t1 ? INFINITY : t0;
 }
 
 
 
-float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, out vec3 hitNormal, out vec3 hitColor, out float hitShininess, out int hitType)
+float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool isShadowRay, bool sceneHasDirectionalLightOnly, 
+			out vec3 hitNormal, out vec3 hitColor, out float hitShininess, out int hitType)
 {
 	vec3 hitPos, n;
 	vec3 rObjOrigin, rObjDirection;
@@ -743,48 +770,60 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, out vec3 hitNormal, out 
 		hitType = CHECKER;
 	}
 
-	d = BoxIntersect( boxes[0].minCorner, boxes[0].maxCorner, rayOrigin, rayDirection, n, isRayExiting );
-	if (d < t)
-	{
-		t = d;
-		hitNormal = n;
-		hitColor = boxes[0].color;
-		hitShininess = boxes[0].shininess;
-		hitType = boxes[0].type;
-		//finalIsRayExiting = isRayExiting;
-	}
-
-	for (int i = 0; i < N_SPHERES; i++)
-	{
-		d = SphereIntersect( spheres[i].radius, spheres[i].position, rayOrigin, rayDirection );
-		if (d < t)
-		{
-			t = d;
-			hitNormal = (rayOrigin + rayDirection * t) - spheres[i].position;
-			hitColor = spheres[i].color;
-			hitShininess = spheres[i].shininess;
-			hitType = spheres[i].type;
-		}
-	}
-
 	// transform ray into Ellipsoid Param's object space
 	rObjOrigin = vec3( uSphere0InvMatrix * vec4(rayOrigin, 1.0) );
 	rObjDirection = vec3( uSphere0InvMatrix * vec4(rayDirection, 0.0) );
 	
 	float angleAmount = (sin(uTime) * 0.5 + 0.5);
 	//d = EllipsoidParamIntersect(-1.0, 1.0, TWO_PI, rObjOrigin, rObjDirection, n);
-	d = EllipsoidParamIntersect(-1.0, 1.0, angleAmount * TWO_PI, rObjOrigin, rObjDirection, n);
+	d = EllipsoidParamIntersect(-1.0, angleAmount, PI, rObjOrigin, rObjDirection, n);
 	if (d < t)
 	{
 		t = d;
 		hitNormal = normalize(transpose(mat3(uSphere0InvMatrix)) * n);
 		hitColor = vec3(0.0, 0.3, 1.0);
-		hitShininess = 0.0;
+		hitShininess = 1000.0;
 		hitType = CLEARCOAT_DIFFUSE;
 	}
 
+	// transform ray into Unit Box's object space
+	rObjOrigin = vec3( uBox0InvMatrix * vec4(rayOrigin, 1.0) );
+	rObjDirection = vec3( uBox0InvMatrix * vec4(rayDirection, 0.0) );
+	
+	d = UnitBoxIntersect(rObjOrigin, rObjDirection, n);
+	if (d < t)
+	{
+		t = d;
+		hitNormal = normalize(transpose(mat3(uBox0InvMatrix)) * n);
+		hitColor = vec3(0.0, 1.0, 0.0);
+		hitShininess = 1000.0;
+		hitType = CLEARCOAT_DIFFUSE;
+	}
+
+	if (!isShadowRay || sceneHasDirectionalLightOnly)
+		return t;
+
+	// d = BoundingBoxIntersect(pointLights[0].position - vec3(0.1), pointLights[0].position + vec3(0.1), rayOrigin, 1.0/rayDirection);
+	// if (d < t)
+	// {
+	// 	t = d;
+	// 	hitColor = pointLights[0].color * pointLights[0].power;
+	// 	hitType = POINT_LIGHT;
+	// }
+
+	float angle = acos(dot(rayDirection, -spotLights[0].spotLightAimingDirection));
+	if (angle > spotLights[0].cutoffAngle)
+		return t;
+	d = BoundingBoxIntersect(spotLights[0].position - vec3(0.1), spotLights[0].position + vec3(0.1), rayOrigin, 1.0/rayDirection);
+	if (d < t)
+	{
+		t = d;
+		hitColor = spotLights[0].color * spotLights[0].power;
+		hitType = SPOT_LIGHT;
+	}
+
 	return t;
-} // end float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, out vec3 hitNormal, out vec3 hitColor, out float hitShininess, out int hitType)
+} // end float SceneIntersect()
 
 
 
@@ -825,39 +864,78 @@ vec3 CalculateRadiance()
 
 	bool bounceIsSpecular = true;
 	bool isShadowRay = false;
+	bool shadowRayAimedAtPositionalLight = false;
+	bool sceneHasDirectionalLightOnly = false;
 	bool firstHitWasTransparent = false;
 	bool firstHitWasMetal = false;
 	bool reflectionTime = false;
 
 	for (int bounces = 0; bounces < 6; bounces++)
 	{
-		t = SceneIntersect(rayOrigin, rayDirection, hitNormal, hitColor, hitShininess, hitType);
+		t = SceneIntersect(rayOrigin, rayDirection, isShadowRay, sceneHasDirectionalLightOnly,
+					 hitNormal, hitColor, hitShininess, hitType);
 
-		if (t == INFINITY)
+		if (hitType == POINT_LIGHT || hitType == SPOT_LIGHT)
+		{
+			// set object's ambient lighting (this is the darkest it can be, even in shadow)
+			ambientColor = colorMask * 0.2;
+
+			diffuseColor = colorMask * hitColor;
+			diffuseColor = mix(ambientColor, diffuseColor, diffuseCosWeight);
+
+			specularColor = specularCosWeight * hitColor;
+
+			if (firstHitWasMetal)
+				specularColor *= firstColorMask;
+			finalColor = diffuseColor + specularColor; // diffuse color already includes ambient color in this method
+			
+			if (firstHitWasTransparent)
+			{
+				if (!reflectionTime)
+				{
+					firstColor = finalColor;
+					colorMask = firstColorMask;
+					specularCosWeight = firstSpecularCosWeight;
+					reflectionTime = true;
+					bounceIsSpecular = true;
+					isShadowRay = false;
+					rayDirection = firstRayDirection;
+					rayOrigin = firstRayOrigin;
+					continue;
+				}
+				else
+				{
+					finalColor += firstColor;
+					break;
+				}
+			}
+
+			break;
+		} // end if (hitType == POINT_LIGHT || hitType == SPOT_LIGHT)
+
+		if (t == INFINITY && !shadowRayAimedAtPositionalLight)
 		{
 			if (bounceIsSpecular)
 			{
 				finalColor = colorMask * getSkyColor(rayDirection);
 
-				specularColor = colorMask * specularCosWeight * pointLights[0].color * pointLights[0].power;
+				specularColor = colorMask * specularCosWeight * directionalLights[0].color * directionalLights[0].power;
 
 				finalColor += specularColor;
-				//break;
 			}
 			if (isShadowRay) // shadow ray aimed towards light is not blocked by any scene object
 			{
 				// set object's ambient lighting (this is the darkest it can be, even in shadow)
 				ambientColor = colorMask * 0.2;
 
-				diffuseColor = colorMask * pointLights[0].color * pointLights[0].power;
+				diffuseColor = colorMask * directionalLights[0].color * directionalLights[0].power;
 				diffuseColor = mix(ambientColor, diffuseColor, diffuseCosWeight);
 
-				specularColor = specularCosWeight * pointLights[0].color * pointLights[0].power;
+				specularColor = specularCosWeight * directionalLights[0].color * directionalLights[0].power;
 
 				if (firstHitWasMetal)
 					specularColor *= firstColorMask;
 				finalColor = diffuseColor + specularColor; // diffuse color already includes ambient color in this method
-				//break;
 			}
 
 			if (firstHitWasTransparent)
@@ -877,12 +955,15 @@ vec3 CalculateRadiance()
 				else
 				{
 					finalColor += firstColor;
-					//break;
+					break;
 				}
 			}
 
 			break;
-		}
+		} // end if (t == INFINITY && !shadowRayAimedAtPositionalLight)
+
+		
+
 
 		// if still is shadow ray, the ray aimed towards the light is blocked by a scene object (it hit something), 
 		// and therefore the surface remains in shadow 
@@ -923,14 +1004,14 @@ vec3 CalculateRadiance()
 		n = normalize(hitNormal);
 		nl = dot(n, rayDirection) < 0.0 ? n : -n;
 		hitPoint = rayOrigin + rayDirection * t;
-		dirToLight= normalize(pointLights[0].position - hitPoint);
+		
+		//dirToLight = normalize(directionalLights[0].directionTowardsLight);
+		//dirToLight= normalize(pointLights[0].position - hitPoint);
+		dirToLight= normalize(spotLights[0].position - hitPoint);
 
 
 		if (hitType == DIFFUSE)
 		{
-			
-			//hitColor = pow(texture(uDiffuseTexture, hitPoint.xy).rgb, vec3(2.2));
-
 			bounceIsSpecular = false;
 			colorMask *= hitColor;
 
@@ -950,6 +1031,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
+			shadowRayAimedAtPositionalLight = true;
 			continue;
 		} // end if (hitType == DIFFUSE)
 
@@ -1074,6 +1156,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
+			shadowRayAimedAtPositionalLight = true;
 			continue;
 			
 		} // end if (hitType == CLEARCOAT_DIFFUSE || hitType == CHECKER)
@@ -1086,28 +1169,14 @@ vec3 CalculateRadiance()
 
 void DefineScene()
 {
-	float sphereRadius0 = 2.0;
-	float sphereRadius1 = 1.0;
-	float sphereRadius2 = 1.5;
-	float sphereRadius3 = 1.25;
-	float sphereRadius4 = 1.75;
-	float sinTime = sin(mod(uTime, 2.0 * PI));
-	float cosTime = cos(mod(uTime, 2.0 * PI));
-	vec3 spherePosition0 = vec3(0, sin(uTime) * -3.0 + 3.0 + sphereRadius0, 0);
-	vec3 spherePosition1 = vec3(sinTime * 3.0 + 3.0, sinTime * 3.0 + 3.0 + sphereRadius1, cosTime * 3.0 + 3.0);
-	vec3 spherePosition2 = vec3(cosTime * 2.0 + 2.0, cosTime * 3.0 + 3.0 + sphereRadius2, sinTime * 2.0 + 2.0);
-	vec3 spherePosition3 = vec3(cosTime * 2.0, cosTime * -3.0 + 3.0 + sphereRadius3, sinTime * 4.0 + 4.0);
-	vec3 spherePosition4 = vec3(sinTime * 4.0 + 4.0, sinTime * -3.0 + 3.0 + sphereRadius4, cosTime * -2.0 - 2.0);
+	directionalLights[0] = DirectionalLight(vec3(-1.0, 1.0,-1.0), vec3(1.0, 1.0, 1.0), 1.0, DIRECTIONAL_LIGHT);
 
-	pointLights[0] = PointLight(vec3(20.0, 10.0, 20.0), vec3(1.0, 1.0, 1.0), 1.0, 3.14159, POINT_LIGHT);
+	pointLights[0] = PointLight(vec3(2.0, 5.0, 5.0), vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
 
-	spheres[0] = Sphere( sphereRadius0, spherePosition0, vec3(1.0, 1.0, 1.0), 0.0, DIFFUSE);
-	spheres[1] = Sphere( sphereRadius1, spherePosition1, vec3(0.955008, 0.637427, 0.538163), 1000.0, METAL);
-	spheres[2] = Sphere( sphereRadius2, spherePosition2, vec3(1.0, 1.0, 1.0), 1000.0, TRANSPARENT);
-	spheres[3] = Sphere( sphereRadius3, spherePosition3, vec3(0.9, 0.05, 0.05), 1000.0, CLEARCOAT_DIFFUSE);
-	spheres[4] = Sphere( sphereRadius4, spherePosition4, vec3(0.971519, 0.959915, 0.915324), 500.0, METAL);
-
-	boxes[0] = Box( vec3(-8.0, 0.0, 3.0), vec3(-6.0, 2.0, 5.0), vec3(0.0, 1.0, 0.0), 1000.0, CLEARCOAT_DIFFUSE );
+	vec3 spotLightPosition = vec3(0.0, 5.0, 0.0);
+	vec3 spotLightTarget = vec3(cos(uTime) * 5.0, 0.0, sin(uTime) * 5.0);
+	vec3 spotLightAimDirection = normalize(spotLightTarget - spotLightPosition); 
+	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.3, vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
 } // end void DefineScene()
 
 
@@ -1308,6 +1377,7 @@ uniformLocation_uDiffuseTexture = gl.getUniformLocation(rayTracingShaderProgram,
 uniformLocation_uMatrices = gl.getUniformLocation(rayTracingShaderProgram, 'uMatrices');
 uniformLocation_uCameraMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraMatrix');
 uniformLocation_uSphere0InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uSphere0InvMatrix');
+uniformLocation_uBox0InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uBox0InvMatrix');
 uniformLocation_uCameraIsMoving = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraIsMoving');
 uniformLocation_uSceneIsDynamic = gl.getUniformLocation(rayTracingShaderProgram, 'uSceneIsDynamic');
 uniformLocation_uTime = gl.getUniformLocation(rayTracingShaderProgram, 'uTime');
@@ -1566,7 +1636,8 @@ function animate()
 	elArray = [];
 	for (let i = 0; i < numOfMatrices; i++)
 	{
-		elArray.push(uMatrices[i].elements);
+		for (let j = 0; j < 16; j++)
+			elArray.push(uMatrices[i].elements[j]);
 	}
 	matricesElementsArray.set(elArray);
 	gl.uniformMatrix4fv(uniformLocation_uMatrices, false, matricesElementsArray);
@@ -1586,27 +1657,45 @@ function animate()
 	gl.uniformMatrix4fv(uniformLocation_uCameraMatrix, false, worldCamera.matrixWorld.elements);
 
 
-	// sphere0
-
+	// SPHERE0
 	// the following clears out object's matrix from last frame
 	sphere0.updateMatrixWorld(true);
 	// now build up a series of transformations on the object (position, rotation, scale, shear)
 	//sphere0.position.set(0, Math.abs(Math.sin(uTime)) * 2 + 1, 6);
 	sphere0.position.set(0, 2, 6);
 
-	sphere0.rotation.set(0, uTime % TWO_PI, 0);
+	//sphere0.rotation.set(0, uTime % TWO_PI, 0);
 
-	scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
+	//scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
 	//sphere0.scale.set(1, scale, 1);
 
-	shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0); // (xy, xz,  yx, yz,  zx, zy)
+	//shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0); // (xy, xz,  yx, yz,  zx, zy)
 	//sphere0.matrixWorld.multiply(shearMatrix);
 	
 	// finally, send Sphere0's Matrix Inverse to the GPU
 	uSphere0InvMatrix.copy(sphere0.matrixWorld).invert();
 	gl.uniformMatrix4fv(uniformLocation_uSphere0InvMatrix, false, uSphere0InvMatrix.elements);
 
-	// sphere0.updateMatrixWorld(true);
+	// BOX0
+	// the following clears out object's matrix from last frame
+	box0.updateMatrixWorld(true);
+	// now build up a series of transformations on the object (position, rotation, scale, shear)
+	box0.position.set(Math.sin(uTime) * 2, 1, 0);
+	//box0.position.set(-3, 1, 0);
+
+	//box0.rotation.set(0, uTime % TWO_PI, 0);
+
+	scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
+	box0.scale.set(1, scale, 1);
+
+	shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0); // (xy, xz,  yx, yz,  zx, zy)
+	box0.matrixWorld.multiply(shearMatrix);
+
+	// finally, send box0's Matrix Inverse to the GPU
+	uBox0InvMatrix.copy(box0.matrixWorld).invert();
+	gl.uniformMatrix4fv(uniformLocation_uBox0InvMatrix, false, uBox0InvMatrix.elements);
+
+
 
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindTexture(gl.TEXTURE_2D, uPreviousScreenImageTexture);
