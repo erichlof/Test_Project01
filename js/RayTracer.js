@@ -751,7 +751,7 @@ float BoundingBoxIntersect( vec3 minCorner, vec3 maxCorner, vec3 rayOrigin, vec3
 
 
 
-float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool isShadowRay, bool sceneHasDirectionalLightOnly, 
+float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPositionalLight, 
 			out vec3 hitNormal, out vec3 hitColor, out float hitShininess, out int hitType)
 {
 	vec3 hitPos, n;
@@ -800,27 +800,28 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool isShadowRay, bool s
 		hitType = CLEARCOAT_DIFFUSE;
 	}
 
-	if (!isShadowRay || sceneHasDirectionalLightOnly)
+	if (!shadowRayAimedAtPositionalLight)
 		return t;
 
-	// d = BoundingBoxIntersect(pointLights[0].position - vec3(0.1), pointLights[0].position + vec3(0.1), rayOrigin, 1.0/rayDirection);
-	// if (d < t)
-	// {
-	// 	t = d;
-	// 	hitColor = pointLights[0].color * pointLights[0].power;
-	// 	hitType = POINT_LIGHT;
-	// }
-
-	float angle = acos(dot(rayDirection, -spotLights[0].spotLightAimingDirection));
-	if (angle > spotLights[0].cutoffAngle)
-		return t;
-	d = BoundingBoxIntersect(spotLights[0].position - vec3(0.1), spotLights[0].position + vec3(0.1), rayOrigin, 1.0/rayDirection);
+	d = BoundingBoxIntersect(pointLights[0].position - vec3(0.1), pointLights[0].position + vec3(0.1), rayOrigin, 1.0/rayDirection);
 	if (d < t)
 	{
 		t = d;
-		hitColor = spotLights[0].color * spotLights[0].power;
-		hitType = SPOT_LIGHT;
+		hitColor = pointLights[0].color * pointLights[0].power;
+		hitType = POINT_LIGHT;
 	}
+
+	// float angleBetweenRayAndLight = acos(dot(rayDirection, -spotLights[0].spotLightAimingDirection));
+	// if (angleBetweenRayAndLight > spotLights[0].cutoffAngle)
+	// 	return t;
+
+	// d = BoundingBoxIntersect(spotLights[0].position - vec3(0.1, 0.1, 0.25), spotLights[0].position + vec3(0.1, 0.1, 0.25), rayOrigin, 1.0/rayDirection);
+	// if (d < t)
+	// {
+	// 	t = d;
+	// 	hitColor = spotLights[0].color * spotLights[0].power;
+	// 	hitType = SPOT_LIGHT;
+	// }
 
 	return t;
 } // end float SceneIntersect()
@@ -865,56 +866,17 @@ vec3 CalculateRadiance()
 	bool bounceIsSpecular = true;
 	bool isShadowRay = false;
 	bool shadowRayAimedAtPositionalLight = false;
-	bool sceneHasDirectionalLightOnly = false;
 	bool firstHitWasTransparent = false;
 	bool firstHitWasMetal = false;
 	bool reflectionTime = false;
 
 	for (int bounces = 0; bounces < 6; bounces++)
 	{
-		t = SceneIntersect(rayOrigin, rayDirection, isShadowRay, sceneHasDirectionalLightOnly,
-					 hitNormal, hitColor, hitShininess, hitType);
-
-		if (hitType == POINT_LIGHT || hitType == SPOT_LIGHT)
-		{
-			// set object's ambient lighting (this is the darkest it can be, even in shadow)
-			ambientColor = colorMask * 0.2;
-
-			diffuseColor = colorMask * hitColor;
-			diffuseColor = mix(ambientColor, diffuseColor, diffuseCosWeight);
-
-			specularColor = specularCosWeight * hitColor;
-
-			if (firstHitWasMetal)
-				specularColor *= firstColorMask;
-			finalColor = diffuseColor + specularColor; // diffuse color already includes ambient color in this method
-			
-			if (firstHitWasTransparent)
-			{
-				if (!reflectionTime)
-				{
-					firstColor = finalColor;
-					colorMask = firstColorMask;
-					specularCosWeight = firstSpecularCosWeight;
-					reflectionTime = true;
-					bounceIsSpecular = true;
-					isShadowRay = false;
-					rayDirection = firstRayDirection;
-					rayOrigin = firstRayOrigin;
-					continue;
-				}
-				else
-				{
-					finalColor += firstColor;
-					break;
-				}
-			}
-
-			break;
-		} // end if (hitType == POINT_LIGHT || hitType == SPOT_LIGHT)
-
+		t = SceneIntersect(rayOrigin, rayDirection, shadowRayAimedAtPositionalLight, hitNormal, hitColor, hitShininess, hitType);
+		
 		if (t == INFINITY && !shadowRayAimedAtPositionalLight)
 		{
+
 			if (bounceIsSpecular)
 			{
 				finalColor = colorMask * getSkyColor(rayDirection);
@@ -948,6 +910,7 @@ vec3 CalculateRadiance()
 					reflectionTime = true;
 					bounceIsSpecular = true;
 					isShadowRay = false;
+					shadowRayAimedAtPositionalLight = false;
 					rayDirection = firstRayDirection;
 					rayOrigin = firstRayOrigin;
 					continue;
@@ -960,11 +923,50 @@ vec3 CalculateRadiance()
 			}
 
 			break;
-		} // end if (t == INFINITY && !shadowRayAimedAtPositionalLight)
+		} // end if (t == INFINITY)
+
+
+		if (hitType == POINT_LIGHT || hitType == SPOT_LIGHT)
+		{
+
+			// set object's ambient lighting (this is the darkest it can be, even in shadow)
+			ambientColor = colorMask * 0.2;
+
+			diffuseColor = colorMask * hitColor;
+			diffuseColor = mix(ambientColor, diffuseColor, diffuseCosWeight);
+
+			specularColor = specularCosWeight * hitColor;
+
+			if (firstHitWasMetal)
+				specularColor *= firstColorMask;
+			finalColor = diffuseColor + specularColor; // diffuse color already includes ambient color in this method
+			
+			if (firstHitWasTransparent)
+			{
+				if (!reflectionTime)
+				{
+					firstColor = finalColor;
+					colorMask = firstColorMask;
+					specularCosWeight = firstSpecularCosWeight;
+					reflectionTime = true;
+					bounceIsSpecular = true;
+					isShadowRay = false;
+					shadowRayAimedAtPositionalLight = false;
+					rayDirection = firstRayDirection;
+					rayOrigin = firstRayOrigin;
+					continue;
+				}
+				else
+				{
+					finalColor += firstColor;
+					break;
+				}
+			}
+
+			break;
+		} // end if (hitType == POINT_LIGHT || hitType == SPOT_LIGHT)
 
 		
-
-
 		// if still is shadow ray, the ray aimed towards the light is blocked by a scene object (it hit something), 
 		// and therefore the surface remains in shadow 
 		if (isShadowRay)
@@ -985,6 +987,7 @@ vec3 CalculateRadiance()
 					reflectionTime = true;
 					bounceIsSpecular = true;
 					isShadowRay = false;
+					shadowRayAimedAtPositionalLight = false;
 					rayDirection = firstRayDirection;
 					rayOrigin = firstRayOrigin;
 					continue;
@@ -1005,9 +1008,9 @@ vec3 CalculateRadiance()
 		nl = dot(n, rayDirection) < 0.0 ? n : -n;
 		hitPoint = rayOrigin + rayDirection * t;
 		
-		//dirToLight = normalize(directionalLights[0].directionTowardsLight);
+		dirToLight = normalize(directionalLights[0].directionTowardsLight);
 		//dirToLight= normalize(pointLights[0].position - hitPoint);
-		dirToLight= normalize(spotLights[0].position - hitPoint);
+		//dirToLight= normalize(spotLights[0].position - hitPoint);
 
 
 		if (hitType == DIFFUSE)
@@ -1031,7 +1034,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
-			shadowRayAimedAtPositionalLight = true;
+			//shadowRayAimedAtPositionalLight = true;
 			continue;
 		} // end if (hitType == DIFFUSE)
 
@@ -1156,7 +1159,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
-			shadowRayAimedAtPositionalLight = true;
+			//shadowRayAimedAtPositionalLight = true;
 			continue;
 			
 		} // end if (hitType == CLEARCOAT_DIFFUSE || hitType == CHECKER)
@@ -1173,10 +1176,11 @@ void DefineScene()
 
 	pointLights[0] = PointLight(vec3(2.0, 5.0, 5.0), vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
 
+	float angle = mod(uTime, TWO_PI);
 	vec3 spotLightPosition = vec3(0.0, 5.0, 0.0);
-	vec3 spotLightTarget = vec3(cos(uTime) * 5.0, 0.0, sin(uTime) * 5.0);
+	vec3 spotLightTarget = vec3(cos(angle) * 5.0, 0.0, sin(angle) * 5.0);
 	vec3 spotLightAimDirection = normalize(spotLightTarget - spotLightPosition); 
-	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.3, vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
+	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.5, vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
 } // end void DefineScene()
 
 
