@@ -55,11 +55,14 @@ let scene = new Object3D();
 let worldCamera = new Object3D();
 let sphere0 = new Object3D();
 let box0 = new Object3D();
+let box1 = new Object3D();
 let shearMatrix = new Matrix4();
 let uSphere0InvMatrix = new Matrix4();
 let uniformLocation_uSphere0InvMatrix;
 let uBox0InvMatrix = new Matrix4();
 let uniformLocation_uBox0InvMatrix;
+let uBox1InvMatrix = new Matrix4();
+let uniformLocation_uBox1InvMatrix;
 let controls, cameraControlsObject, cameraControlsYawObject, cameraControlsPitchObject;
 let oldYawRotation;
 let oldPitchRotation;
@@ -562,6 +565,7 @@ uniform mat4 uMatrices[2];
 uniform mat4 uCameraMatrix;
 uniform mat4 uSphere0InvMatrix;
 uniform mat4 uBox0InvMatrix;
+uniform mat4 uBox1InvMatrix;
 uniform vec2 uResolution;
 uniform float uTime;
 uniform float uFrameCounter;
@@ -751,6 +755,7 @@ float BoundingBoxIntersect( vec3 minCorner, vec3 maxCorner, vec3 rayOrigin, vec3
 
 
 
+
 float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPositionalLight, 
 			out vec3 hitNormal, out vec3 hitColor, out float hitShininess, out int hitType)
 {
@@ -760,12 +765,22 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 	float d;
 	bool isRayExiting;
 
+	// d = 
+	// if (d < t)
+	// {
+	// 	t = d;
+	// 	hitNormal = n;
+	// 	hitColor = vec3(1.0, 0.0, 0.0);
+	// 	hitShininess = 1000.0;
+	// 	hitType = CLEARCOAT_DIFFUSE;
+	// }
+
 	d = PosY_XZRectangleIntersect( vec3(0,0,0), 10.0, 10.0, rayOrigin, rayDirection );
 	if (d < t)
 	{
 		t = d;
 		hitNormal = vec3(0, 1, 0);
-		hitColor = vec3(1.0, 0.0, 0.0);
+		hitColor = vec3(1.0, 1.0, 1.0);
 		hitShininess = 1000.0;
 		hitType = CHECKER;
 	}
@@ -786,7 +801,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 		hitType = CLEARCOAT_DIFFUSE;
 	}
 
-	// transform ray into Unit Box's object space
+	// transform ray into Unit Box0's object space
 	rObjOrigin = vec3( uBox0InvMatrix * vec4(rayOrigin, 1.0) );
 	rObjDirection = vec3( uBox0InvMatrix * vec4(rayDirection, 0.0) );
 	
@@ -796,6 +811,20 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 		t = d;
 		hitNormal = normalize(transpose(mat3(uBox0InvMatrix)) * n);
 		hitColor = vec3(0.0, 1.0, 0.0);
+		hitShininess = 1000.0;
+		hitType = CLEARCOAT_DIFFUSE;
+	}
+
+	// transform ray into Unit Box1's object space
+	rObjOrigin = vec3( uBox1InvMatrix * vec4(rayOrigin, 1.0) );
+	rObjDirection = vec3( uBox1InvMatrix * vec4(rayDirection, 0.0) );
+	
+	d = UnitBoxIntersect(rObjOrigin, rObjDirection, n);
+	if (d < t)
+	{
+		t = d;
+		hitNormal = normalize(transpose(mat3(uBox1InvMatrix)) * n);
+		hitColor = vec3(1.0, 1.0, 0.0);
 		hitShininess = 1000.0;
 		hitType = CLEARCOAT_DIFFUSE;
 	}
@@ -811,17 +840,17 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 		hitType = POINT_LIGHT;
 	}
 
-	// float angleBetweenRayAndLight = acos(dot(rayDirection, -spotLights[0].spotLightAimingDirection));
-	// if (angleBetweenRayAndLight > spotLights[0].cutoffAngle)
-	// 	return t;
+	float angleBetweenRayAndLight = acos(dot(rayDirection, -spotLights[0].spotLightAimingDirection));
+	if (angleBetweenRayAndLight > spotLights[0].cutoffAngle)
+		return t;
 
-	// d = BoundingBoxIntersect(spotLights[0].position - vec3(0.1, 0.1, 0.25), spotLights[0].position + vec3(0.1, 0.1, 0.25), rayOrigin, 1.0/rayDirection);
-	// if (d < t)
-	// {
-	// 	t = d;
-	// 	hitColor = spotLights[0].color * spotLights[0].power;
-	// 	hitType = SPOT_LIGHT;
-	// }
+	d = BoundingBoxIntersect(spotLights[0].position - vec3(0.1, 0.1, 0.25), spotLights[0].position + vec3(0.1, 0.1, 0.25), rayOrigin, 1.0/rayDirection);
+	if (d < t)
+	{
+		t = d;
+		hitColor = spotLights[0].color * spotLights[0].power;
+		hitType = SPOT_LIGHT;
+	}
 
 	return t;
 } // end float SceneIntersect()
@@ -1008,9 +1037,9 @@ vec3 CalculateRadiance()
 		nl = dot(n, rayDirection) < 0.0 ? n : -n;
 		hitPoint = rayOrigin + rayDirection * t;
 		
-		dirToLight = normalize(directionalLights[0].directionTowardsLight);
+		//dirToLight = normalize(directionalLights[0].directionTowardsLight);
 		//dirToLight= normalize(pointLights[0].position - hitPoint);
-		//dirToLight= normalize(spotLights[0].position - hitPoint);
+		dirToLight= normalize(spotLights[0].position - hitPoint);
 
 
 		if (hitType == DIFFUSE)
@@ -1034,7 +1063,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
-			//shadowRayAimedAtPositionalLight = true;
+			shadowRayAimedAtPositionalLight = true;
 			continue;
 		} // end if (hitType == DIFFUSE)
 
@@ -1159,7 +1188,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
-			//shadowRayAimedAtPositionalLight = true;
+			shadowRayAimedAtPositionalLight = true;
 			continue;
 			
 		} // end if (hitType == CLEARCOAT_DIFFUSE || hitType == CHECKER)
@@ -1172,15 +1201,17 @@ vec3 CalculateRadiance()
 
 void DefineScene()
 {
+	float angle = mod(uTime, TWO_PI);
+
 	directionalLights[0] = DirectionalLight(vec3(-1.0, 1.0,-1.0), vec3(1.0, 1.0, 1.0), 1.0, DIRECTIONAL_LIGHT);
 
-	pointLights[0] = PointLight(vec3(2.0, 5.0, 5.0), vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
+	pointLights[0] = PointLight(vec3(cos(angle) * 5.0, 5.0, sin(angle) * 5.0), vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
 
-	float angle = mod(uTime, TWO_PI);
+	
 	vec3 spotLightPosition = vec3(0.0, 5.0, 0.0);
 	vec3 spotLightTarget = vec3(cos(angle) * 5.0, 0.0, sin(angle) * 5.0);
 	vec3 spotLightAimDirection = normalize(spotLightTarget - spotLightPosition); 
-	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.5, vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
+	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.5, vec3(1.0, 1.0, 1.0), 1.0, SPOT_LIGHT);
 } // end void DefineScene()
 
 
@@ -1382,6 +1413,7 @@ uniformLocation_uMatrices = gl.getUniformLocation(rayTracingShaderProgram, 'uMat
 uniformLocation_uCameraMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraMatrix');
 uniformLocation_uSphere0InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uSphere0InvMatrix');
 uniformLocation_uBox0InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uBox0InvMatrix');
+uniformLocation_uBox1InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 'uBox1InvMatrix');
 uniformLocation_uCameraIsMoving = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraIsMoving');
 uniformLocation_uSceneIsDynamic = gl.getUniformLocation(rayTracingShaderProgram, 'uSceneIsDynamic');
 uniformLocation_uTime = gl.getUniformLocation(rayTracingShaderProgram, 'uTime');
@@ -1684,20 +1716,43 @@ function animate()
 	// the following clears out object's matrix from last frame
 	box0.updateMatrixWorld(true);
 	// now build up a series of transformations on the object (position, rotation, scale, shear)
-	box0.position.set(Math.sin(uTime) * 2, 1, 0);
-	//box0.position.set(-3, 1, 0);
+	//box0.position.set(Math.sin(uTime) * 2, 1, 0);
+	box0.position.set(-3, 2, 0);
 
-	//box0.rotation.set(0, uTime % TWO_PI, 0);
+	//box0.rotation.set(0, Math.PI * 0.25, Math.PI * 0.25);
+	box0.rotation.set(0, Math.PI * 0.25, 0);
 
-	scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
-	box0.scale.set(1, scale, 1);
+	//scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
+	//scale = 1;
+	//box0.scale.set(scale, scale, scale);
 
-	shearMatrix.makeShear(0.0, 0.0, 0.0, 0.0, Math.sin(uTime), 0.0); // (xy, xz,  yx, yz,  zx, zy)
-	box0.matrixWorld.multiply(shearMatrix);
+	//shearMatrix.makeShear(-0.1, 0.0, -0.1, 0.0, 0.0, 0.0); // (xy, xz, yx, yz, zx, zy)
+	//box0.matrixWorld.multiply(shearMatrix);
 
 	// finally, send box0's Matrix Inverse to the GPU
 	uBox0InvMatrix.copy(box0.matrixWorld).invert();
 	gl.uniformMatrix4fv(uniformLocation_uBox0InvMatrix, false, uBox0InvMatrix.elements);
+
+
+	// BOX1
+	// the following clears out object's matrix from last frame
+	box1.updateMatrixWorld(true);
+	// now build up a series of transformations on the object (position, rotation, scale, shear)
+	//box1.position.set(Math.sin(uTime) * 2, 1, 0);
+	box1.position.set(-3, 2, 0);
+
+	box1.rotation.set(Math.PI * 0.25, 0, 0);
+
+	//scale = Math.abs(Math.sin(uTime)) * 2 + 0.1;
+	//scale = 0.25;
+	//box1.scale.set(1, 1, scale);
+
+	//shearMatrix.makeShear(-0.1, 0.0, -0.1, 0.0, 0.0, 0.0); // (xy, xz, yx, yz, zx, zy)
+	//box1.matrixWorld.multiply(shearMatrix);
+
+	// finally, send box1's Matrix Inverse to the GPU
+	uBox1InvMatrix.copy(box1.matrixWorld).invert();
+	gl.uniformMatrix4fv(uniformLocation_uBox1InvMatrix, false, uBox1InvMatrix.elements);
 
 
 
