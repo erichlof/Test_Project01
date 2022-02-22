@@ -29,6 +29,8 @@ let uniformLocation_uBlueNoiseTexture;
 let uniformLocation_uDiffuseTexture;
 let uniformLocation_uResolution;
 let uniformLocation_uRandomVec2;
+let uniformLocation_uApertureSize;
+let uniformLocation_uFocusDistance;
 let uniformLocation_uTime;
 let oldTime, newTime, frameTime;
 let uFrameCounter = 1;
@@ -42,6 +44,12 @@ let uniformLocation_uSceneIsDynamic;
 let mouseControl = true;
 let isPaused = true;
 let pointerlockChange;
+let apertureSize = 0.0;
+let increaseAperture = false;
+let decreaseAperture = false;
+let focusDistance = 10.0;
+let increaseFocusDist = false;
+let decreaseFocusDist = false;
 let increaseFOV = false;
 let decreaseFOV = false;
 let aspectRatio;
@@ -593,6 +601,8 @@ uniform float uTime;
 uniform float uFrameCounter;
 uniform float uULen;
 uniform float uVLen;
+uniform float uFocusDistance;
+uniform float uApertureSize;
 uniform bool uSceneIsDynamic;
 uniform bool uCameraIsMoving;
 
@@ -610,12 +620,6 @@ DirectionalLight directionalLights[N_DIRECTIONAL_LIGHTS];
 PointLight pointLights[N_POINT_LIGHTS];
 SpotLight spotLights[N_SPOT_LIGHTS];
 
-
-vec3 ReinhardToneMapping(vec3 color)
-{
-	///color *= uToneMappingExposure;
-	return clamp(color / (vec3(1) + color), 0.0, 1.0);
-}
 
 float calcFresnelReflectance(vec3 rayDirection, vec3 n, float etai, float etat, out float ratioIoR)
 {
@@ -1207,8 +1211,18 @@ void main()
 	vec2 pixelPos = uv * 2.0 - 1.0;
 	vec3 rayDir = normalize( pixelPos.x * camRight * uULen + pixelPos.y * camUp * uVLen + camForward );
 
-	rayOrigin = cameraPos;
-	rayDirection = rayDir;
+	// depth of field
+	vec3 focalPoint = uFocusDistance * rayDir;
+	//focalPoint = 10.0 * rayDir;
+	float randomAngle = rng() * TWO_PI; // pick random point on aperture
+	float randomRadius = rng() * uApertureSize;
+	vec3  randomAperturePos = ( cos(randomAngle) * camRight + sin(randomAngle) * camUp ) * sqrt(randomRadius);
+	// point on aperture to focal point
+	vec3 finalRayDir = normalize(focalPoint - randomAperturePos);
+
+	rayOrigin = cameraPos + randomAperturePos;
+	rayDirection = finalRayDir;
+
 
 	DefineScene();
 
@@ -1222,13 +1236,13 @@ void main()
 	{
 		if (uCameraIsMoving) // camera is currently moving
 		{
-			previousPixelColor *= 0.5; // motion-blur trail amount (old image)
-			currentPixelColor *= 0.5; // brightness of new image (noisy)
+			previousPixelColor *= 0.6; // motion-blur trail amount (old image)
+			currentPixelColor *= 0.4; // brightness of new image (noisy)
 		}
 		else
 		{
-			previousPixelColor *= 0.6; // motion-blur trail amount (old image)
-			currentPixelColor *= 0.4; // brightness of new image (noisy)
+			previousPixelColor *= 0.9; // motion-blur trail amount (old image)
+			currentPixelColor *= 0.1; // brightness of new image (noisy)
 		}
 	}
 
@@ -1370,6 +1384,8 @@ uniformLocation_uBox1InvMatrix = gl.getUniformLocation(rayTracingShaderProgram, 
 uniformLocation_uCameraIsMoving = gl.getUniformLocation(rayTracingShaderProgram, 'uCameraIsMoving');
 uniformLocation_uSceneIsDynamic = gl.getUniformLocation(rayTracingShaderProgram, 'uSceneIsDynamic');
 uniformLocation_uTime = gl.getUniformLocation(rayTracingShaderProgram, 'uTime');
+uniformLocation_uApertureSize = gl.getUniformLocation(rayTracingShaderProgram, 'uApertureSize');
+uniformLocation_uFocusDistance = gl.getUniformLocation(rayTracingShaderProgram, 'uFocusDistance');
 uniformLocation_uFrameCounter = gl.getUniformLocation(rayTracingShaderProgram, 'uFrameCounter');
 uniformLocation_uResolution = gl.getUniformLocation(rayTracingShaderProgram, 'uResolution');
 uniformLocation_uRandomVec2 = gl.getUniformLocation(rayTracingShaderProgram, 'uRandomVec2');
@@ -1560,6 +1576,23 @@ function animate()
 			cameraControlsObject.position.sub(cameraUpVector.multiplyScalar(camFlightSpeed * frameTime));
 			uCameraIsMoving = true;
 		}
+
+		if ((keyPressed('up') || button5Pressed) && !(keyPressed('down') || button6Pressed))
+		{
+			increaseFocusDist = true;
+		}
+		if ((keyPressed('down') || button6Pressed) && !(keyPressed('up') || button5Pressed))
+		{
+			decreaseFocusDist = true;
+		}
+		if (keyPressed('right') && !keyPressed('left'))
+		{
+			increaseAperture = true;
+		}
+		if (keyPressed('left') && !keyPressed('right'))
+		{
+			decreaseAperture = true;
+		}
 	} // end if (!isPaused)
 
 	if (increaseFOV)
@@ -1589,6 +1622,42 @@ function animate()
 
 		uCameraIsMoving = true;
 		decreaseFOV = false;
+	}
+
+	if (increaseFocusDist)
+	{
+		focusDistance += 0.1;
+		
+		uCameraIsMoving = true;
+		increaseFocusDist = false;
+	}
+	if (decreaseFocusDist)
+	{
+		focusDistance -= 0.1;
+		if (focusDistance < 1.0)
+			focusDistance = 1.0;
+		
+		uCameraIsMoving = true;
+		decreaseFocusDist = false;
+	}
+
+	if (increaseAperture)
+	{
+		apertureSize += 0.01;
+		if (apertureSize > 10.0)
+			apertureSize = 10.0;
+		
+		uCameraIsMoving = true;
+		increaseAperture = false;
+	}
+	if (decreaseAperture)
+	{
+		apertureSize -= 0.01;
+		if (apertureSize < 0.0)
+			apertureSize = 0.0;
+		
+		uCameraIsMoving = true;
+		decreaseAperture = false;
 	}
 
 	if (uFrameCounter > 1000)
@@ -1623,6 +1692,8 @@ function animate()
 	gl.uniform1f(uniformLocation_uCameraIsMoving, uCameraIsMoving);
 	gl.uniform1f(uniformLocation_uTime, uTime);
 	gl.uniform1f(uniformLocation_uFrameCounter, uFrameCounter);
+	gl.uniform1f(uniformLocation_uFocusDistance, focusDistance);
+	gl.uniform1f(uniformLocation_uApertureSize, apertureSize);
 
 	elArray = [];
 	for (let i = 0; i < numOfMatrices; i++)
