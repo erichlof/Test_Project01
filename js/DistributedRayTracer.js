@@ -568,7 +568,7 @@ void main()
 
 //rayTracingFragShader source code
 rayTracingFragCode =
-	`#version 300 es
+`#version 300 es
 
 precision highp float;
 precision highp int;
@@ -832,7 +832,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 	if (d < t)
 	{
 		t = d;
-		hitNormal = normalize(transpose(mat3(uSphere0InvMatrix)) * n);
+		hitNormal = (transpose(mat3(uSphere0InvMatrix)) * n);
 		hitColor = vec3(1);//vec3(0.0, 0.3, 1.0);
 		hitShininess = 1000.0;
 		hitRoughness = 0.0;
@@ -847,7 +847,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 	if (d < t)
 	{
 		t = d;
-		hitNormal = normalize(transpose(mat3(uSphere1InvMatrix)) * n);
+		hitNormal = (transpose(mat3(uSphere1InvMatrix)) * n);
 		hitColor = vec3(1,0.6,0.1);
 		hitShininess = 10.0;
 		hitRoughness = 0.5;
@@ -862,7 +862,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 	if (d < t)
 	{
 		t = d;
-		hitNormal = normalize(transpose(mat3(uBox0InvMatrix)) * n);
+		hitNormal = (transpose(mat3(uBox0InvMatrix)) * n);
 		hitColor = vec3(0.0, 1.0, 0.0);
 		hitShininess = 1000.0;
 		hitRoughness = 0.0;
@@ -877,7 +877,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 	if (d < t)
 	{
 		t = d;
-		hitNormal = normalize(transpose(mat3(uBox1InvMatrix)) * n);
+		hitNormal = (transpose(mat3(uBox1InvMatrix)) * n);
 		hitColor = vec3(1.0, 1.0, 0.0);
 		hitShininess = 1000.0;
 		hitRoughness = 0.0;
@@ -887,7 +887,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 	
 	if (!shadowRayAimedAtPositionalLight)
 		return t;
-
+	/* 
 	d = BoundingBoxIntersect(pointLights[0].position - vec3(0.1), pointLights[0].position + vec3(0.1), rayOrigin, 1.0/rayDirection);
 	if (d < t)
 	{
@@ -907,7 +907,7 @@ float SceneIntersect(vec3 rayOrigin, vec3 rayDirection, bool shadowRayAimedAtPos
 		hitColor = spotLights[0].color * spotLights[0].power;
 		hitType = SPOT_LIGHT;
 	}
-
+ 	*/
 	return t;
 } // end float SceneIntersect()
 
@@ -923,7 +923,7 @@ vec3 CalculateRadiance()
 {
 	vec3 hitNormal, hitColor;
 	float hitShininess, hitRoughness;
-	int hitType;
+	int hitType = -100;
 
 	vec3 checkColor0 = vec3(0.1);
 	vec3 checkColor1 = vec3(1.0);
@@ -947,6 +947,7 @@ vec3 CalculateRadiance()
 
 	bool bounceIsSpecular = true;
 	bool isShadowRay = false;
+	bool isCausticRay = false;
 	bool shadowRayAimedAtPositionalLight = false;
 
 
@@ -976,6 +977,9 @@ vec3 CalculateRadiance()
 				specularColor = specularCosWeight * directionalLights[0].color * directionalLights[0].power;
 
 				finalColor = diffuseColor + specularColor; // diffuse color already includes ambient color in this method
+
+				if (isCausticRay)
+					finalColor = diffuseColor * pow(max(dot(-normalize(hitNormal), normalize(dirToLight)), 0.0), 1.5) * 1.5;
 			}
 
 			break;
@@ -1001,7 +1005,7 @@ vec3 CalculateRadiance()
 		
 		// if still is shadow ray, the ray aimed towards the light is blocked by a scene object (it hit something), 
 		// and therefore the surface remains in shadow 
-		if (isShadowRay)
+		if (hitType != TRANSPARENT && isShadowRay)
 		{
 			// ambientColor is for darker parts of the scene that are unlit by direct light sources
 			// set object's ambient lighting (this is the darkest it can be, even in shadow)
@@ -1011,6 +1015,8 @@ vec3 CalculateRadiance()
 
 			break;
 		}
+		if (hitType == TRANSPARENT && isShadowRay)
+			isCausticRay = true;
 			
 
 		// useful data
@@ -1018,14 +1024,14 @@ vec3 CalculateRadiance()
 		nl = dot(n, rayDirection) < 0.0 ? n : -n;
 		hitPoint = rayOrigin + rayDirection * t;
 		
-		//dirToLight = normalize(directionalLights[0].directionTowardsLight);
+		dirToLight = directionalLights[0].directionTowardsLight;
 		//dirToLight = normalize(pointLights[0].position - hitPoint);
-
+		/* 
 		dirToLight = spotLights[0].position - hitPoint;
 		distanceSquaredToLight = max(1.0, dot(dirToLight, dirToLight) * 0.2);
 		//distanceSquaredToLight *= distanceSquaredToLight;
 		dirToLight = normalize(dirToLight);
-
+ 		*/
 
 		if (hitType == DIFFUSE)
 		{
@@ -1034,7 +1040,7 @@ vec3 CalculateRadiance()
 
 			// pre-calculate Lambert(cosine-weighted) diffuse lighting amount
 			diffuseCosWeight = max(0.0, dot(dirToLight, nl));
-			diffuseCosWeight /= distanceSquaredToLight;
+			///diffuseCosWeight /= distanceSquaredToLight;
 			
 			if (hitShininess > 0.0)
 			{
@@ -1042,7 +1048,7 @@ vec3 CalculateRadiance()
 				halfDirection = normalize(-rayDirection + dirToLight);
 				specularCosWeight = max(0.0, dot(halfDirection, nl));
 				specularCosWeight = pow(specularCosWeight, hitShininess);
-				specularCosWeight /= distanceSquaredToLight;
+				///specularCosWeight /= distanceSquaredToLight;
 			}
 			
 			// create shadow ray
@@ -1050,7 +1056,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
-			shadowRayAimedAtPositionalLight = true;
+			//shadowRayAimedAtPositionalLight = true;
 			continue;
 		} // end if (hitType == DIFFUSE)
 
@@ -1070,7 +1076,7 @@ vec3 CalculateRadiance()
 			// create reflection ray
 			vec3 reflectedRay = reflect(rayDirection, nl);
 			vec3 randomizedRay = normalize( reflectedRay + vec3(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0, rand() * 2.0 - 1.0) );
-			rayDirection = normalize(mix(reflectedRay, randomizedRay, hitRoughness * hitRoughness));
+			rayDirection = reflectedRay;// normalize(mix(reflectedRay, randomizedRay, hitRoughness * hitRoughness));
 			rayOrigin = hitPoint + nl * 0.01;
 
 			continue;
@@ -1087,7 +1093,7 @@ vec3 CalculateRadiance()
 			RP = Re / P;
 			TP = Tr / (1.0 - P);
 
-			if (rand() < P)
+			if (bounces == 0 && rand() < P)
 			{
 				if (hitShininess > 0.0)
 				{
@@ -1108,6 +1114,8 @@ vec3 CalculateRadiance()
 			colorMask *= TP;
 			
 			tdir = refract(rayDirection, nl, ratioIoR);
+			if (isCausticRay)
+				tdir = rayDirection;
 			rayDirection = tdir;
 			rayOrigin = hitPoint - nl * 0.01;
 
@@ -1133,7 +1141,7 @@ vec3 CalculateRadiance()
 					halfDirection = normalize(-rayDirection + dirToLight);
 					specularCosWeight = max(0.0, dot(halfDirection, nl));
 					specularCosWeight = pow(specularCosWeight, hitShininess);
-					specularCosWeight /= distanceSquaredToLight;
+					///specularCosWeight /= distanceSquaredToLight;
 				}
 
 				colorMask *= RP;
@@ -1158,7 +1166,7 @@ vec3 CalculateRadiance()
 
 			// pre-calculate Lambert(cosine-weighted) diffuse lighting amount
 			diffuseCosWeight = max(0.0, dot(dirToLight, nl));
-			diffuseCosWeight /= distanceSquaredToLight;
+			///diffuseCosWeight /= distanceSquaredToLight;
 
 			if (hitShininess > 0.0)
 			{
@@ -1166,7 +1174,7 @@ vec3 CalculateRadiance()
 				halfDirection = normalize(-rayDirection + dirToLight);
 				specularCosWeight = max(0.0, dot(halfDirection, nl));
 				specularCosWeight = pow(specularCosWeight, hitShininess);
-				specularCosWeight /= distanceSquaredToLight;
+				///specularCosWeight /= distanceSquaredToLight;
 			}
 
 			// create shadow ray
@@ -1174,7 +1182,7 @@ vec3 CalculateRadiance()
 			rayOrigin = hitPoint + nl * 0.01;
 
 			isShadowRay = true;
-			shadowRayAimedAtPositionalLight = true;
+			//shadowRayAimedAtPositionalLight = true;
 			continue;
 			
 		} // end if (hitType == CLEARCOAT_DIFFUSE || hitType == CHECKER)
@@ -1189,15 +1197,16 @@ void DefineScene()
 {
 	float angle = mod(uTime, TWO_PI);
 
-	directionalLights[0] = DirectionalLight(vec3(-1.0, 1.0,-1.0), vec3(1.0, 1.0, 1.0), 1.0, DIRECTIONAL_LIGHT);
+	directionalLights[0] = DirectionalLight(normalize(vec3(cos(angle), 1.0, sin(angle))), vec3(1.0, 1.0, 1.0), 1.0, DIRECTIONAL_LIGHT);
 
-	pointLights[0] = PointLight(vec3(cos(angle) * 5.0, 5.0, sin(angle) * 5.0), vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
+	/* pointLights[0] = PointLight(vec3(cos(angle) * 5.0, 5.0, sin(angle) * 5.0), vec3(1.0, 1.0, 1.0), 1.0, POINT_LIGHT);
 
 	
 	vec3 spotLightPosition = vec3(0, 10, 0);
 	vec3 spotLightTarget = vec3(cos(angle) * 5.0, 0.0, sin(angle) * 5.0);
 	vec3 spotLightAimDirection = normalize(spotLightTarget - spotLightPosition); 
-	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.3, vec3(1.0, 1.0, 1.0), 50.0, SPOT_LIGHT);
+	spotLights[0] = SpotLight(spotLightPosition, spotLightAimDirection, 0.3, vec3(1.0, 1.0, 1.0), 50.0, SPOT_LIGHT); 
+	*/
 } // end void DefineScene()
 
 
