@@ -1238,7 +1238,6 @@ void main()
 	camRight = normalize(camRight);
 	camUp = cross(camForward, camRight);
 	camUp = normalize(camUp); 
-	
 	*/
 
 	vec3 camRight   = vec3( uCameraMatrix[0][0],  uCameraMatrix[0][1],  uCameraMatrix[0][2]);
