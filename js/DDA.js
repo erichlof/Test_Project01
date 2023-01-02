@@ -243,56 +243,37 @@ function draw()
 	{
 		testPlayerX = playerX;
 		testPlayerY = playerY;
-		// move parallel to playerLookDir vector
+		// move player's X position in the playerLookDir vector, but only use the X direction component
 		testPlayerX += playerLookDirX * playerMoveForward;
+		//testPlayerY += playerLookDirY * playerMoveForward;
+
+		testCellX = Math.floor(testPlayerX / cellDisplayScale);
+		testCellY = Math.floor(testPlayerY / cellDisplayScale);
+		testCellIndex = testCellY * numOfCellsX + testCellX;
+		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
+			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
+		{ // success with moving in X direction only
+			playerX = testPlayerX;
+			//playerY = testPlayerY;
+		}
+
+		// reset testPlayer X and Y
+		testPlayerX = playerX;
+		testPlayerY = playerY;
+		// move player's Y position in the playerLookDir vector, but only use the Y direction component
+		//testPlayerX += playerLookDirX * playerMoveForward;
 		testPlayerY += playerLookDirY * playerMoveForward;
 
 		testCellX = Math.floor(testPlayerX / cellDisplayScale);
 		testCellY = Math.floor(testPlayerY / cellDisplayScale);
 		testCellIndex = testCellY * numOfCellsX + testCellX;
-
-		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
+		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
 			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
-		{ // success with moving in both X and Y directions
-			playerX = testPlayerX;
+		{ // success with moving in Y direction only
+			//playerX = testPlayerX;
 			playerY = testPlayerY;
 		}
-		else // X and Y together didn't work, so now try only moving in the X direction
-		{	// reset testPlayer X and Y
-			testPlayerX = playerX;
-			testPlayerY = playerY;
-			// move parallel to playerLookDir vector
-			testPlayerX += playerLookDirX * playerMoveForward;
-			//testPlayerY += playerLookDirY * playerMoveForward;
 
-			testCellX = Math.floor(testPlayerX / cellDisplayScale);
-			testCellY = Math.floor(testPlayerY / cellDisplayScale);
-			testCellIndex = testCellY * numOfCellsX + testCellX;
-			if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-				cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
-			{ // success with moving in X direction only
-				playerX = testPlayerX;
-				playerY = testPlayerY;
-			}
-			else // X didn't work, so now try only moving in the Y direction
-			{	// reset testPlayer X and Y
-				testPlayerX = playerX;
-				testPlayerY = playerY;
-				// move parallel to playerLookDir vector
-				//testPlayerX += playerLookDirX * playerMoveForward;
-				testPlayerY += playerLookDirY * playerMoveForward;
-
-				testCellX = Math.floor(testPlayerX / cellDisplayScale);
-				testCellY = Math.floor(testPlayerY / cellDisplayScale);
-				testCellIndex = testCellY * numOfCellsX + testCellX;
-				if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-					cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
-				{ // success with moving in Y direction only
-					playerX = testPlayerX;
-					playerY = testPlayerY;
-				}
-			}
-		}
 	} // end if (KeyW_isPressed || KeyS_isPressed)
 
 	if (KeyA_isPressed || KeyD_isPressed)
@@ -300,57 +281,40 @@ function draw()
 		testPlayerX = playerX;
 		testPlayerY = playerY;
 		// trick to moving perpendicular to playerLookDir vector (sideways strafe)
+		// move player's X position in the playerLookDir vector, but only use the Y direction component
 		testPlayerX -= playerLookDirY * playerStrafe;
+		//testPlayerY += playerLookDirX * playerStrafe;
+
+		testCellX = Math.floor(testPlayerX / cellDisplayScale);
+		testCellY = Math.floor(testPlayerY / cellDisplayScale);
+		testCellIndex = testCellY * numOfCellsX + testCellX;
+
+		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
+			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
+		{ // success with moving in X direction only
+			playerX = testPlayerX;
+			//playerY = testPlayerY;
+		}
+
+		// reset testPlayer X and Y
+		testPlayerX = playerX;
+		testPlayerY = playerY;
+		// trick to moving perpendicular to playerLookDir vector (sideways strafe)
+		// move player's Y position in the playerLookDir vector, but only use the X direction component
+		//testPlayerX -= playerLookDirY * playerStrafe;
 		testPlayerY += playerLookDirX * playerStrafe;
 
 		testCellX = Math.floor(testPlayerX / cellDisplayScale);
 		testCellY = Math.floor(testPlayerY / cellDisplayScale);
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 
-		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
+		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
 			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
-		{
-			playerX = testPlayerX;
+		{ // success with moving in Y direction only
+			//playerX = testPlayerX;
 			playerY = testPlayerY;
 		}
-		else // X and Y together didn't work, so now try only moving in the X direction
-		{	// reset testPlayer X and Y
-			testPlayerX = playerX;
-			testPlayerY = playerY;
-			// trick to moving perpendicular to playerLookDir vector (sideways strafe)
-			testPlayerX -= playerLookDirY * playerStrafe;
-			//testPlayerY += playerLookDirX * playerStrafe;
 
-			testCellX = Math.floor(testPlayerX / cellDisplayScale);
-			testCellY = Math.floor(testPlayerY / cellDisplayScale);
-			testCellIndex = testCellY * numOfCellsX + testCellX;
-
-			if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-				cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
-			{ // success with moving in X direction only
-				playerX = testPlayerX;
-				playerY = testPlayerY;
-			}
-			else // X didn't work, so now try only moving in the Y direction
-			{	// reset testPlayer X and Y
-				testPlayerX = playerX;
-				testPlayerY = playerY;
-				// trick to moving perpendicular to playerLookDir vector (sideways strafe)
-				//testPlayerX -= playerLookDirY * playerStrafe;
-				testPlayerY += playerLookDirX * playerStrafe;
-
-				testCellX = Math.floor(testPlayerX / cellDisplayScale);
-				testCellY = Math.floor(testPlayerY / cellDisplayScale);
-				testCellIndex = testCellY * numOfCellsX + testCellX;
-
-				if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-					cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
-				{ // success with moving in Y direction only
-					playerX = testPlayerX;
-					playerY = testPlayerY;
-				}
-			}
-		}
 	} // end if (KeyA_isPressed || KeyD_isPressed)
 
 
