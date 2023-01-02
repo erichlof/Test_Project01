@@ -252,7 +252,7 @@ function draw()
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 
 		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-			cellsArray[testCellIndex] == 0 && (testCellX != mouseX && testCellY != mouseY))
+			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
 		{ // success with moving in both X and Y directions
 			playerX = testPlayerX;
 			playerY = testPlayerY;
@@ -269,7 +269,7 @@ function draw()
 			testCellY = Math.floor(testPlayerY / cellDisplayScale);
 			testCellIndex = testCellY * numOfCellsX + testCellX;
 			if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-				cellsArray[testCellIndex] == 0 && (testCellX != mouseX && testCellY != mouseY))
+				cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
 			{ // success with moving in X direction only
 				playerX = testPlayerX;
 				playerY = testPlayerY;
@@ -286,7 +286,7 @@ function draw()
 				testCellY = Math.floor(testPlayerY / cellDisplayScale);
 				testCellIndex = testCellY * numOfCellsX + testCellX;
 				if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-					cellsArray[testCellIndex] == 0 && (testCellX != mouseX && testCellY != mouseY))
+					cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
 				{ // success with moving in Y direction only
 					playerX = testPlayerX;
 					playerY = testPlayerY;
@@ -308,7 +308,7 @@ function draw()
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 
 		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-			cellsArray[testCellIndex] == 0 && (testCellX != mouseX && testCellY != mouseY))
+			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
 		{
 			playerX = testPlayerX;
 			playerY = testPlayerY;
@@ -326,7 +326,7 @@ function draw()
 			testCellIndex = testCellY * numOfCellsX + testCellX;
 
 			if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-				cellsArray[testCellIndex] == 0 && (testCellX != mouseX && testCellY != mouseY))
+				cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
 			{ // success with moving in X direction only
 				playerX = testPlayerX;
 				playerY = testPlayerY;
@@ -344,7 +344,7 @@ function draw()
 				testCellIndex = testCellY * numOfCellsX + testCellX;
 
 				if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY && 
-					cellsArray[testCellIndex] == 0 && (testCellX != mouseX && testCellY != mouseY))
+					cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
 				{ // success with moving in Y direction only
 					playerX = testPlayerX;
 					playerY = testPlayerY;
