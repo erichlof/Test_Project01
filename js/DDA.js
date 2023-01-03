@@ -37,6 +37,24 @@ let testPlayerY = 0;
 let testCellX = -1;
 let testCellY = -1;
 let testCellIndex = -1;
+// DDA variables
+let rayStartX = 0;
+let rayStartY = 0;
+let rayDirectionX = 0;
+let rayDirectionY = 0;
+let rayUnitStepSizeX = 0;
+let rayUnitStepSizeY = 0;
+let mapCheckX = 0;
+let mapCheckY = 0;
+let rayLength1D_X = 0;
+let rayLength1D_Y = 0;
+let stepX = 0;
+let stepY = 0;
+let tileFound = false;
+let rayDistance = 0;
+let MAX_RAY_DISTANCE = 1000;
+let intersectionX = 0;
+let intersectionY = 0;
 
 
 window.addEventListener("resize", handleWindowResize);
@@ -191,6 +209,7 @@ function draw()
 
 	context.clearRect(0, 0, canvas.width, canvas.height);
 
+
 	for (let row = 0; row < numOfCellsY; row++)
 	{
 		for (let col = 0; col < numOfCellsX; col++)
@@ -221,15 +240,9 @@ function draw()
 				context.fillRect(col * cellDisplayScale + 1, row * cellDisplayScale + 1,
 					cellDisplayScale - 1, cellDisplayScale - 1);
 			}
-		}
-	}
+		} // end for (let col = 0; col < numOfCellsX; col++)
+	} // end for (let row = 0; row < numOfCellsY; row++)
 
-	// mouse lookAt target
-	context.lineWidth = 2;
-	context.strokeStyle = "blue";
-	context.beginPath();
-	context.arc(mouseX, mouseY, 10, 0, 2 * Math.PI);
-	context.stroke();
 
 	// player lookDirection and lookAngle
 	playerLookDirX = mouseX - playerX;
@@ -238,6 +251,74 @@ function draw()
 	playerLookDirX /= playerLookMagnitude;
 	playerLookDirY /= playerLookMagnitude;
 	playerLookAngle = Math.atan2(playerLookDirY, playerLookDirX);
+
+	// DDA algorithm
+	rayStartX = playerX / cellDisplayScale;
+	rayStartY = playerY / cellDisplayScale;
+	mapCheckX = playerCellX;
+	mapCheckY = playerCellY;
+	rayDirectionX = playerLookDirX;
+	rayDirectionY = playerLookDirY;
+	rayUnitStepSizeX = Math.sqrt(1 + (rayDirectionY / rayDirectionX) * (rayDirectionY / rayDirectionX));
+	rayUnitStepSizeY = Math.sqrt(1 + (rayDirectionX / rayDirectionY) * (rayDirectionX / rayDirectionY));
+	if (rayDirectionX < 0)
+	{
+		stepX = -1;
+		rayLength1D_X = (rayStartX - mapCheckX) * rayUnitStepSizeX;
+	}
+	else
+	{
+		stepX = 1;
+		rayLength1D_X = ((mapCheckX + 1) - rayStartX) * rayUnitStepSizeX;
+	}
+	if (rayDirectionY < 0)
+	{
+		stepY = -1;
+		rayLength1D_Y = (rayStartY - mapCheckY) * rayUnitStepSizeY;
+	}
+	else
+	{
+		stepY = 1;
+		rayLength1D_Y = ((mapCheckY + 1) - rayStartY) * rayUnitStepSizeY;
+	}
+
+	tileFound = false;
+	while (!tileFound)// && rayDistance < MAX_RAY_DISTANCE)
+	{
+		// Walk
+		if (rayLength1D_X < rayLength1D_Y)
+		{
+			mapCheckX += stepX;
+			rayDistance = rayLength1D_X;
+			rayLength1D_X += rayUnitStepSizeX;
+		}
+		else
+		{
+			mapCheckY += stepY;
+			rayDistance = rayLength1D_Y;
+			rayLength1D_Y += rayUnitStepSizeY;
+		}
+
+		// make sure we're still within grid X and Y boundaries
+		if (mapCheckX < 0 || mapCheckX >= numOfCellsX || mapCheckY < 0 || mapCheckY >= numOfCellsY)
+		{
+			tileFound = true;
+			break;
+		}
+
+		// Check tile
+		if (cellsArray[(mapCheckY * numOfCellsX) + mapCheckX] == 1)
+		{
+			tileFound = true;
+		}
+	} // end while (!tileFound)
+
+	if (tileFound)
+	{
+		intersectionX = playerX + (rayDirectionX * rayDistance * cellDisplayScale);
+		intersectionY = playerY + (rayDirectionY * rayDistance * cellDisplayScale);
+	}
+
 
 	if (KeyW_isPressed || KeyS_isPressed)
 	{
@@ -251,7 +332,7 @@ function draw()
 		testCellY = Math.floor(testPlayerY / cellDisplayScale);
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
-			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
+			cellsArray[testCellIndex] == 0)
 		{ // success with moving in X direction only
 			playerX = testPlayerX;
 			//playerY = testPlayerY;
@@ -268,7 +349,7 @@ function draw()
 		testCellY = Math.floor(testPlayerY / cellDisplayScale);
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
-			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
+			cellsArray[testCellIndex] == 0)
 		{ // success with moving in Y direction only
 			//playerX = testPlayerX;
 			playerY = testPlayerY;
@@ -290,7 +371,7 @@ function draw()
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 
 		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
-			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
+			cellsArray[testCellIndex] == 0)
 		{ // success with moving in X direction only
 			playerX = testPlayerX;
 			//playerY = testPlayerY;
@@ -309,7 +390,7 @@ function draw()
 		testCellIndex = testCellY * numOfCellsX + testCellX;
 
 		if (testCellX > -1 && testCellX < numOfCellsX && testCellY > -1 && testCellY < numOfCellsY &&
-			cellsArray[testCellIndex] == 0 && testCellX != mouseX && testCellY != mouseY)
+			cellsArray[testCellIndex] == 0)
 		{ // success with moving in Y direction only
 			//playerX = testPlayerX;
 			playerY = testPlayerY;
@@ -317,26 +398,44 @@ function draw()
 
 	} // end if (KeyA_isPressed || KeyD_isPressed)
 
+	// line of sight
+	context.setLineDash([5, 10]);
+	context.lineWidth = 1;
+	context.strokeStyle = "cyan";
+	context.moveTo(playerX, playerY);
+	context.lineTo(mouseX, mouseY);
+	context.stroke();
+	// return line style to solid
+	context.setLineDash([]);
 
+	
 	// player position
-	context.lineWidth = 2;
+	context.lineWidth = 3;
 	context.strokeStyle = "yellow";
 	context.beginPath();
 	context.arc(playerX, playerY, 10, playerLookAngle + 0.5, playerLookAngle - 0.5);
 	context.stroke();
-
-	// line of sight
-	context.lineWidth = 1;
-	context.setLineDash([5, 10]);
-	context.strokeStyle = "yellow";
-	context.moveTo(playerX, playerY);
-	context.lineTo(mouseX, mouseY);
+	
+	// mouse lookAt target
+	context.lineWidth = 2;
+	context.strokeStyle = "blue";
+	context.beginPath();
+	context.arc(mouseX, mouseY, 10, 0, 2 * Math.PI);
 	context.stroke();
 
-	// return line style to solid
-	context.setLineDash([]);
+	// ray intersection point (if any)
+	if (tileFound)
+	{
+		context.lineWidth = 2;
+		context.strokeStyle = "magenta";
+		context.beginPath();
+		context.arc(intersectionX, intersectionY, 10, 0, 2 * Math.PI);
+		context.stroke();
+	}
 
-	debugInfo.innerHTML = "MouseX: " + mouseX + " MouseY: " + mouseY + "<br>" +
+	
+
+	debugInfo.innerHTML =
 		"CellX: " + cellX + " CellY: " + cellY + " MouseCellIndex: " + mouseCellIndex + "<br>" +
 		"PlayerCellX: " + playerCellX + " PlayerCellY: " + playerCellY + " PlayerCellIndex: " + playerCellIndex + "<br>" +
 		"PlayerLookDirX: " + playerLookDirX.toPrecision(1) + " PlayerLookDirY: " + playerLookDirY.toPrecision(1) +
